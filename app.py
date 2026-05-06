@@ -7573,7 +7573,9 @@ def iniciar_app():
 
 
 if __name__ == "__main__":
-    if any(arg.lower() in ("--server", "--servidor", "server", "servidor") for arg in sys.argv[1:]):
+    server_args = any(arg.lower() in ("--server", "--servidor", "server", "servidor") for arg in sys.argv[1:])
+    running_on_web_host = bool(os.environ.get("RENDER") or os.environ.get("PORT"))
+    if server_args or running_on_web_host:
         start_flask()
     else:
         iniciar_app()
