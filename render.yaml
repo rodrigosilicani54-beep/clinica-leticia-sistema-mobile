@@ -15,7 +15,7 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_PORT
-        value: "6543"
+        value: "5432"
       - key: DB_NAME
         value: postgres
       - key: DB_POOL_MINCONN

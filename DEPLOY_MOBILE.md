@@ -12,9 +12,11 @@ Este deploy publica o `app.py` como API/web app online e continua usando o Supab
 DB_HOST
 DB_USER
 DB_PASSWORD
-DB_PORT=6543
+DB_PORT=5432
 DB_NAME=postgres
 ```
+
+Use os dados do Session Pooler do Supabase quando o deploy for no Render.
 
 4. Depois do deploy, abra:
 
