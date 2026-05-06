@@ -1,0 +1,12 @@
+db_config.local.json
+flask_smoke_*.log
+__pycache__/
+.venv/
+backup/
+build/
+dist/
+setup/
+Instalador/
+Nova pasta/
+*.pyc
+*.log

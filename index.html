@@ -1,0 +1,2179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Clinica de agendamentos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .appointment-slot {
+            min-height: 24px;
+            transition: background-color 0.15s ease;
+            cursor: pointer;
+            font-size: 11px;
+            position: relative;
+            overflow: visible;
+        }
+        .slot-segment {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            overflow: hidden;
+            padding: 1px;
+            min-height: 50%;
+            box-sizing: border-box;
+        }
+        .appointment-block {
+            border-radius: 3px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .full-slot {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 4px;
+            box-sizing: border-box;
+        }
+        .appointment-slot:hover {
+            background-color: #f8fafc;
+        }
+        .appointment-card {
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .appointment-card:hover {
+            transform: scale(1.02);
+        }
+        .blocked-slot {
+            background: repeating-linear-gradient(
+                45deg,
+                #e5e7eb,
+                #e5e7eb 8px,
+                #d1d5db 8px,
+                #d1d5db 16px
+            );
+            border: 1px solid #9ca3af;
+        }
+        .professional-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .professional-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: 60px repeat(6, 1fr);
+            grid-auto-rows: 24px;
+            gap: 0;
+            background: #ffffff;
+            max-height: 65vh;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .time-slot {
+            background: white;
+            padding: 0;
+            text-align: center;
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            min-height: 24px;
+            display: flex;
+            align-items: stretch;
+            flex-direction: column;
+            justify-content: flex-start;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+        .continuation-block {
+            opacity: 0.65;
+            border-radius: 4px;
+            width: 100%;
+            height: 100%;
+        }
+        .day-header {
+            background: #f8fafc;
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #d1d5db;
+            color: #1f2937;
+            font-weight: 600;
+            padding: 0 6px;
+            text-align: center;
+            font-size: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .day-header.current-day {
+            background: #d7f0ee;
+        }
+        .time-label {
+            background: #ffffff;
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            color: #111827;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+        }
+        .schedule-appointment-block {
+            position: absolute;
+            display: grid;
+            grid-template-columns: 24px minmax(0, 1fr);
+            align-items: stretch;
+            min-height: 100%;
+            margin: 0;
+            border-radius: 3px;
+            overflow: hidden;
+            background: #047857;
+            color: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: none;
+            z-index: 20;
+        }
+        .schedule-appointment-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.82);
+            color: #0f172a;
+            font-size: 12px;
+            line-height: 1;
+        }
+        .schedule-cancel-patient-icon {
+            width: 15px;
+            height: 15px;
+            display: block;
+        }
+        .schedule-appointment-content {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 6px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.15;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .schedule-appointment-time {
+            flex: 0 0 auto;
+            font-weight: 800;
+        }
+        .schedule-appointment-title,
+        .schedule-appointment-professional,
+        .schedule-appointment-type,
+        .schedule-appointment-room,
+        .schedule-appointment-status-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .schedule-appointment-professional {
+            font-size: 11px;
+            font-weight: 800;
+            opacity: 0.95;
+        }
+        .schedule-appointment-type {
+            opacity: 0.95;
+        }
+        .schedule-appointment-room {
+            max-width: 34%;
+            font-size: 11px;
+            font-weight: 800;
+            opacity: 0.9;
+        }
+        .schedule-appointment-status-label {
+            flex: 0 1 auto;
+            max-width: 45%;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            opacity: 0.95;
+        }
+        .schedule-type-clinica,
+        .schedule-type-cls,
+        .schedule-type-cls_pre {
+            background: #047857;
+        }
+        .schedule-type-analise,
+        .schedule-type-treinamento,
+        .schedule-type-reuniao_treinamento {
+            background: #8b1fb3;
+        }
+        .schedule-type-discussao {
+            background: #2563eb;
+        }
+        .schedule-type-supervisao,
+        .schedule-type-orientacao {
+            background: #fef08a;
+            color: #111827;
+        }
+        .schedule-type-bloqueado,
+        .schedule-type-analise_pago {
+            background: #64748b;
+        }
+        .schedule-status-finalizado .schedule-appointment-status {
+            background: #bbf7d0;
+            color: #047857;
+        }
+        .schedule-status-pre_atendimento .schedule-appointment-status,
+        .schedule-status-confirmado .schedule-appointment-status {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+        .schedule-status-chegou .schedule-appointment-status,
+        .schedule-status-em_atendimento .schedule-appointment-status {
+            background: #ccfbf1;
+            color: #0f766e;
+        }
+        .schedule-status-cancelado_profissional .schedule-appointment-status,
+        .schedule-status-cancelado_paciente .schedule-appointment-status {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .schedule-status-faltou .schedule-appointment-status,
+        .schedule-status-nao_compareceu .schedule-appointment-status {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .schedule-status-cancelado_profissional,
+        .schedule-status-cancelado_paciente {
+            opacity: 0.82;
+        }
+        .schedule-status-cancelado_profissional .schedule-appointment-content,
+        .schedule-status-cancelado_paciente .schedule-appointment-content {
+            text-decoration: line-through;
+            text-decoration-thickness: 1px;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto p-1 max-w-full">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-lg p-3 mb-3">
+            <!-- Legenda de Cores -->
+            <div class="flex flex-wrap gap-2 mb-3 text-xs">
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-orange-500 rounded"></div>
+                    <span>Atendimento Clínica</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-pink-500 rounded"></div>
+                    <span>Análise</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-blue-500 rounded"></div>
+                    <span>Discussão de Caso</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-green-500 rounded"></div>
+                    <span>CLS</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-yellow-200 rounded border border-gray-300"></div>
+                    <span>Supervisão</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-purple-500 rounded"></div>
+                    <span>Treinamento</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-yellow-400 rounded"></div>
+                    <span>Orientação Parental</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-gray-300 rounded border-2 border-gray-500"></div>
+                    <span>Horário Bloqueado</span>
+                </div>
+            </div>
+
+            <!-- Botões de Ação -->
+            <div class="flex flex-wrap gap-2">
+                <button onclick="showHomeView(); trackResetSequence('home')" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Inicio
+                </button>
+                <button onclick="showDailyPanelView()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Painel do Dia
+                </button>
+                <button onclick="showWaitlistView()" class="bg-violet-700 hover:bg-violet-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Lista de Espera
+                </button>
+                <button onclick="showProfessionalsView(); trackResetSequence('professionals')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📋 Profissionais
+                </button>
+                <button id="btnCreateProfessional" onclick="openProfessionalModal(); trackResetSequence('cadastrar')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    👨‍⚕️ Cadastrar Profissional
+                </button>
+                <button id="btnCreatePatient" onclick="openPatientModal(); trackResetSequence('cadastrar')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    👤 Cadastrar Paciente
+                </button>
+                <button onclick="openPatientListModal()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📋 Pacientes
+                </button>
+                <button onclick="openScheduleModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📅 Agendar
+                </button>
+                <button id="btnBulkCancelAppointments" onclick="openBulkCancelModal()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    🔄 Alteração em Massa
+                </button>
+                <button onclick="openRoomsAvailabilityModal()" class="bg-cyan-700 hover:bg-cyan-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Salas
+                </button>
+                <button onclick="exportReportDirect()" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📄 Relatório HPT
+                </button>
+                <button onclick="showReports()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📈 Relatórios
+                </button>
+                <button onclick="showWeeklyView()" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    📅 Agendas
+                </button>
+                <button onclick="openSmartReschedulingModal()" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    🤖 Reagendamento Inteligente
+                </button>
+                <button id="remarkRequestsButton" onclick="openRemarkRequestsModal()" class="relative bg-sky-700 hover:bg-sky-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    <span id="remarkRequestsBadge" class="hidden absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-5 text-center shadow"></span>
+                    Solicitações de Remarque
+                </button>
+                <button id="remarkNotificationsButton" onclick="openRemarkNotificationsModal()" class="relative bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    <span id="remarkNotificationsBadge" class="hidden absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-5 text-center shadow"></span>
+                    Notificacoes
+                </button>
+                <button onclick="openUserManagementModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    👥 Gerenciar Usuários
+                </button>
+                <button id="syncCloudButton" onclick="openSyncModal()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors" style="display: none;">
+                    ☁️ Sincronizar Nuvem
+                </button>
+                <button id="clearAllButton" onclick="clearAllData()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    🗑️ Limpar Tudo
+                </button>
+                
+                <!-- Hidden System Reset Button -->
+                <button id="hiddenResetButton" onclick="executeSystemReset()" class="bg-red-800 hover:bg-red-900 text-white px-3 py-1 rounded text-sm font-medium transition-colors" style="display: none;">
+                    🔥 RESETAR SISTEMA
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="mainContent">
+            <!-- Home View -->
+            <div id="homeView" class="bg-white rounded-lg shadow-lg p-6">
+                <div class="min-h-[58vh] flex flex-col items-center justify-center text-center">
+                    <img src="logo.png" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-6">
+                    <div class="mb-8"></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 w-full max-w-5xl">
+                        <button onclick="showWeeklyView()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
+                            Agendas
+                        </button>
+                        <button onclick="showDailyPanelView()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
+                            Painel do Dia
+                        </button>
+                        <button onclick="showWaitlistView()" class="bg-violet-700 hover:bg-violet-800 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
+                            Lista de Espera
+                        </button>
+                        <button onclick="openScheduleModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
+                            Novo Agendamento
+                        </button>
+                        <button onclick="showProfessionalsView()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
+                            Profissionais
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Daily Panel View -->
+            <div id="dailyPanelView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Painel do Dia</h2>
+                        <p class="text-sm text-gray-600">Resumo operacional dos atendimentos do dia.</p>
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[620px]">
+                        <div>
+                            <label class="block text-xs font-medium mb-1 text-gray-600">Data</label>
+                            <input type="date" id="dailyPanelDate" onchange="renderDailyPanel()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div id="dailyPanelProfessionalFilterWrap">
+                            <label class="block text-xs font-medium mb-1 text-gray-600">Profissional</label>
+                            <select id="dailyPanelProfessionalFilter" onchange="renderDailyPanel()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-emerald-500">
+                                <option value="">Todos os Profissionais</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button type="button" onclick="refreshDailyPanel()" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-2 rounded text-sm font-medium transition-colors">
+                                Atualizar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_220px_auto] md:items-end">
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Busca</label>
+                        <input type="text" id="dailyPanelSearch" oninput="applyAgendaFilters()" placeholder="Paciente, profissional, sala ou tipo..." class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Status</label>
+                        <select id="dailyPanelStatusFilter" onchange="applyAgendaFilters()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-emerald-500">
+                            <option value="">Todos</option>
+                            <option value="agendado">Agendado</option>
+                            <option value="pre_atendimento">Pre atendimento</option>
+                            <option value="confirmado">Confirmado</option>
+                            <option value="chegou">Chegou</option>
+                            <option value="em_atendimento">Em atendimento</option>
+                            <option value="finalizado">Finalizado</option>
+                            <option value="faltou">Faltou</option>
+                            <option value="cancelado_paciente">Cancelado paciente</option>
+                            <option value="cancelado_profissional">Cancelado profissional</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Sala</label>
+                        <select id="dailyPanelRoomFilter" onchange="applyAgendaFilters()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-emerald-500">
+                            <option value="">Todas as salas</option>
+                        </select>
+                    </div>
+                    <button type="button" onclick="clearAgendaFilters('dailyPanel')" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm font-medium transition-colors">
+                        Limpar
+                    </button>
+                </div>
+
+                <div id="dailyPanelScopeNote" class="mt-3 hidden rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800"></div>
+                <div id="dailyPanelSummary" class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6"></div>
+                <div class="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <div class="rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                            <div class="font-semibold text-gray-800">Atendimentos</div>
+                            <div id="dailyPanelListHint" class="text-xs text-gray-500"></div>
+                        </div>
+                        <div id="dailyPanelAppointments" class="divide-y divide-gray-100"></div>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                            <div class="font-semibold text-gray-800">Salas em uso</div>
+                            <div class="text-xs text-gray-500">Contagem por sala no dia</div>
+                        </div>
+                        <div id="dailyPanelRooms" class="divide-y divide-gray-100"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Waitlist View -->
+            <div id="waitlistView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Lista de Espera / Encaixe</h2>
+                        <p class="text-sm text-gray-600">Controle dos pacientes aguardando vaga ou ajuste de horario.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="refreshWaitlist(true)" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded text-sm font-medium transition-colors">
+                            Atualizar
+                        </button>
+                        <button id="waitlistCreateButton" type="button" onclick="openWaitlistModal()" class="bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
+                            Novo Item
+                        </button>
+                    </div>
+                </div>
+
+                <div id="waitlistAccessNote" class="mt-3 hidden rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800"></div>
+
+                <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_auto] md:items-end">
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Busca</label>
+                        <input type="text" id="waitlistSearch" oninput="renderWaitlist()" placeholder="Paciente, profissional, sala ou observacao..." class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Status</label>
+                        <select id="waitlistStatusFilter" onchange="renderWaitlist()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-violet-500">
+                            <option value="">Todos</option>
+                            <option value="aguardando">Aguardando</option>
+                            <option value="em_contato">Em contato</option>
+                            <option value="encaixado">Encaixado</option>
+                            <option value="cancelado">Cancelado</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Prioridade</label>
+                        <select id="waitlistPriorityFilter" onchange="renderWaitlist()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-violet-500">
+                            <option value="">Todas</option>
+                            <option value="urgente">Urgente</option>
+                            <option value="alta">Alta</option>
+                            <option value="normal">Normal</option>
+                            <option value="baixa">Baixa</option>
+                        </select>
+                    </div>
+                    <button type="button" onclick="clearWaitlistFilters()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm font-medium transition-colors">
+                        Limpar
+                    </button>
+                </div>
+
+                <div id="waitlistSummary" class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4"></div>
+                <div class="mt-5 rounded-lg border border-gray-200 overflow-hidden">
+                    <div class="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                        <div class="font-semibold text-gray-800">Pacientes na lista</div>
+                        <div id="waitlistHint" class="text-xs text-gray-500"></div>
+                    </div>
+                    <div id="waitlistItems" class="divide-y divide-gray-100"></div>
+                </div>
+            </div>
+
+            <!-- Schedule View (Default) -->
+            <div id="scheduleView" class="bg-white rounded-lg shadow-lg p-3" style="display: none;">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-xl font-bold text-gray-800">Agendas</h2>
+                </div>
+                
+                <!-- Professional Filter -->
+                <div class="mb-3 bg-gray-50 p-3 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium mb-1">🔍 Pesquisar Profissional:</label>
+                            <input 
+                                type="text" 
+                                id="mainProfessionalSearch" 
+                                placeholder="Digite o nome do profissional..." 
+                                onkeyup="searchMainProfessionals()"
+                                class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500"
+                            >
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">👨‍⚕️ Filtrar por Profissional:</label>
+                            <select id="professionalFilter" onchange="filterByProfessional()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todos os Profissionais</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px_220px] gap-3">
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Buscar na agenda:</label>
+                            <input type="text" id="scheduleAgendaSearch" placeholder="Paciente, sala, tipo ou status..." oninput="applyAgendaFilters()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Status:</label>
+                            <select id="scheduleStatusFilter" onchange="applyAgendaFilters()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todos</option>
+                                <option value="agendado">Agendado</option>
+                                <option value="pre_atendimento">Pre atendimento</option>
+                                <option value="confirmado">Confirmado</option>
+                                <option value="chegou">Chegou</option>
+                                <option value="em_atendimento">Em atendimento</option>
+                                <option value="finalizado">Finalizado</option>
+                                <option value="faltou">Faltou</option>
+                                <option value="cancelado_paciente">Cancelado paciente</option>
+                                <option value="cancelado_profissional">Cancelado profissional</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Sala:</label>
+                            <select id="scheduleRoomFilter" onchange="applyAgendaFilters()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todas as salas</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Clear Filter Button -->
+                    <div class="mt-2 text-center">
+                        <button onclick="clearMainProfessionalSelection()" class="text-blue-600 hover:text-blue-800 font-medium text-xs">
+                            ✕ Limpar Filtros
+                        </button>
+                    </div>
+                </div>
+                
+
+                
+                <!-- Schedule Grid -->
+                <div id="scheduleGrid" class="schedule-grid overflow-x-auto"></div>
+            </div>
+
+            <!-- Professionals View -->
+            <div id="professionalsView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Profissionais Cadastrados</h2>
+                
+                <!-- Professional Search Filter -->
+                <div class="mb-4 bg-gray-50 p-3 rounded-lg">
+                    <label class="block text-sm font-medium mb-2">🔍 Pesquisar Profissional:</label>
+                    <input 
+                        type="text" 
+                        id="professionalsSearchInput" 
+                        placeholder="Digite o nome do profissional..." 
+                        onkeyup="filterProfessionalsList()"
+                        class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+                
+                <div id="professionalsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            </div>
+
+            <!-- Reports View -->
+            <div id="reportsView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Relatórios</h2>
+                <div id="reportsContent" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+            </div>
+
+            <!-- Weekly View -->
+            <div id="weeklyView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <h2 class="text-2xl font-bold text-gray-800 mb-1">Agendas</h2>
+                <p class="text-sm text-gray-600 mb-4">Agendas por Profissional</p>
+                
+                <!-- Professional Search and Filter -->
+                <div class="mb-4 bg-gray-50 p-3 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Professional Search -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">🔍 Pesquisar Profissional:</label>
+                            <input 
+                                type="text" 
+                                id="professionalSearch" 
+                                placeholder="Digite o nome do profissional..." 
+                                onkeyup="searchProfessionals()"
+                                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            >
+                        </div>
+                        
+                        <!-- Professional Selection -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">👨‍⚕️ Selecionar Profissional:</label>
+                            <select id="weeklyProfessionalFilter" onchange="filterWeeklyByProfessional()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todos os Profissionais</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px_220px_auto] gap-3 md:items-end">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Buscar na agenda:</label>
+                            <input type="text" id="weeklyAgendaSearch" placeholder="Paciente, sala, tipo ou status..." oninput="applyAgendaFilters()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Status:</label>
+                            <select id="weeklyStatusFilter" onchange="applyAgendaFilters()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todos</option>
+                                <option value="agendado">Agendado</option>
+                                <option value="pre_atendimento">Pre atendimento</option>
+                                <option value="confirmado">Confirmado</option>
+                                <option value="chegou">Chegou</option>
+                                <option value="em_atendimento">Em atendimento</option>
+                                <option value="finalizado">Finalizado</option>
+                                <option value="faltou">Faltou</option>
+                                <option value="cancelado_paciente">Cancelado paciente</option>
+                                <option value="cancelado_profissional">Cancelado profissional</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Sala:</label>
+                            <select id="weeklyRoomFilter" onchange="applyAgendaFilters()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="">Todas as salas</option>
+                            </select>
+                        </div>
+                        <button type="button" onclick="clearAgendaFilters('weekly')" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-3 rounded-lg font-medium">
+                            Limpar
+                        </button>
+                    </div>
+                    
+                    <!-- Selected Professional Info -->
+                    <div id="selectedProfessionalInfo" class="mt-4 hidden">
+                        <div class="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="font-medium text-blue-800">Visualizando agenda de:</span>
+                                    <span id="selectedProfessionalName" class="font-bold text-blue-900 ml-2"></span>
+                                    <span id="selectedProfessionalSpecialty" class="text-blue-600 ml-2"></span>
+                                </div>
+                                <button onclick="clearProfessionalSelection()" class="text-blue-600 hover:text-blue-800 font-medium">
+                                    ✕ Limpar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Weekly Schedule Grid -->
+                <div id="weeklyScheduleGrid" class="schedule-grid overflow-x-auto"></div>
+                
+                <!-- Empty State -->
+                <div id="weeklyEmptyState" class="text-center py-12 hidden">
+                    <div class="text-6xl mb-4">📅</div>
+                    <h3 class="text-xl font-medium text-gray-600 mb-2">Nenhum agendamento encontrado</h3>
+                    <p class="text-gray-500">Selecione um profissional para ver sua agenda semanal</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Professional Modal -->
+    <div id="professionalModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 id="professionalModalTitle" class="text-xl font-bold mb-4">Cadastrar Profissional</h3>
+            <form onsubmit="saveProfessional(event)">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nome:</label>
+                    <input type="text" id="nomeProfissional" required placeholder="Digite o nome" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <label class="block text-sm font-medium">Especialidade:</label>
+                        <button type="button" onclick="addProfessionalSpecialtyInput()" title="Adicionar especialidade" class="w-9 h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xl leading-none font-bold flex items-center justify-center">
+                            +
+                        </button>
+                    </div>
+                    <div id="professionalSpecialtiesFields" class="space-y-2">
+                        <input list="professionalSpecialties" type="text" id="especialidade" data-specialty-input="true" required placeholder="Digite ou selecione uma especialidade" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <datalist id="professionalSpecialties">
+                        <option value="ATAC"></option>
+                        <option value="ATM"></option>
+                        <option value="ATS"></option>
+                        <option value="FINANCEIRO"></option>
+                        <option value="FONO"></option>
+                        <option value="MUSICOTERAPIA"></option>
+                        <option value="NEUROPSI"></option>
+                        <option value="PSICO ABA"></option>
+                        <option value="PSICO COMUM"></option>
+                        <option value="PSICOMOTRICIDADE"></option>
+                        <option value="ADMINISTRAÇÃO"></option>
+                        <option value="CONTAS MEDICAS"></option>
+                        <option value="RH"></option>
+                        <option value="T.O"></option>
+                    </datalist>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Telefone:</label>
+                    <input type="tel" id="profPhone" placeholder="(99) 99999-9999" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Data de nascimento:</label>
+                    <input type="date" id="dataNascimentoProfissional" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">E-mail:</label>
+                    <input type="email" id="profEmail" placeholder="exemplo@dominio.com" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nº de conselho:</label>
+                    <input type="text" id="profCouncilNumber" placeholder="Número do conselho" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Preferência dos profissionais:</label>
+                    <textarea id="profPreference" placeholder="Informe preferências, disponibilidade ou observações internas" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" rows="2"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Contato de emergência:</label>
+                    <input type="text" id="profEmergencyContact" placeholder="Nome e telefone do contato de emergência" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="professionalSaveButton" type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex-1">
+                        Salvar
+                    </button>
+                    <button type="button" onclick="closeModal('professionalModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Patient Modal -->
+    <div id="patientModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 id="patientModalTitle" class="text-xl font-bold mb-4">Cadastrar Paciente</h3>
+            <form onsubmit="event.preventDefault()">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nome de Paciente:</label>
+                    <input type="text" id="nomePaciente" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Telefone:</label>
+                    <input type="tel" id="telefone" placeholder="(99) 99999-9999" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Data de nascimento:</label>
+                    <input type="date" id="dataNascimento" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Endereço:</label>
+                    <input type="text" id="endereco" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nome da Mãe:</label>
+                    <input type="text" id="nomeMae" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nome do Pai:</label>
+                    <input type="text" id="nomePai" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Convênio:</label>
+                    <input type="text" id="convenio" list="patientInsuranceSuggestions" placeholder="Digite ou selecione um convênio" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <datalist id="patientInsuranceSuggestions">
+                        <option value="Omint"></option>
+                        <option value="Bradesco"></option>
+                        <option value="Liminar"></option>
+                        <option value="Particular"></option>
+                        <option value="Porto"></option>
+                    </datalist>
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="patientSaveButton" type="button" onclick="salvarPaciente()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex-1">
+                        Salvar
+                    </button>
+                    <button type="button" onclick="closeModal('patientModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Patient List Modal -->
+    <div id="patientListModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-xl font-bold">Pacientes Cadastrados</h3>
+                    <p class="text-sm text-gray-600">Visualize e pesquise pacientes já cadastrados.</p>
+                </div>
+                <button type="button" onclick="closeModal('patientListModal')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-lg">Fechar</button>
+            </div>
+
+            <div class="mb-4">
+                <input type="text" id="patientSearchInput" onkeyup="filterPatientModalList()" placeholder="Buscar por nome, convênio, mãe ou pai..." class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div id="patientListContent" class="grid grid-cols-1 gap-4"></div>
+            <div id="patientListEmpty" class="text-center py-8 text-gray-500 hidden">
+                <div class="text-4xl mb-2">👤</div>
+                <p>Nenhum paciente encontrado.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-blue-800">📊 Exportar/Importar Planilha</h3>
+            
+            <!-- Export Section -->
+            <div class="mb-8">
+                <h4 class="text-lg font-bold mb-4 text-green-700">📤 Exportar Dados</h4>
+                <div class="bg-green-50 p-4 rounded-lg mb-4">
+                    <p class="text-sm text-green-800 mb-3">
+                        <strong>Regras de Exportação:</strong>
+                    </p>
+                    <ul class="text-sm text-green-700 space-y-1 ml-4">
+                        <li>• Todos os agendamentos serão exportados em formato Excel (.xlsx)</li>
+                        <li>• Os dados incluem: Data, Horário, Profissional, Paciente, Tipo e Observações</li>
+                        <li>• A planilha será ordenada por data e horário automaticamente</li>
+                        <li>• Formato de data: DD/MM/AAAA (padrão brasileiro)</li>
+                        <li>• Colunas com largura otimizada para visualização</li>
+                    </ul>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Data inicial
+                        <input type="date" id="reportStartDate" class="mt-2 block w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </label>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Data final
+                        <input type="date" id="reportEndDate" class="mt-2 block w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" />
+                    </label>
+                </div>
+                <div class="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                    <div class="text-sm font-semibold text-blue-900 mb-2">Campos do Relat&oacute;rio HPT</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-blue-900">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="reportIncludeType" checked class="rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                            <span>Incluir tipo de atendimento</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="reportIncludeSessions" checked class="rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                            <span>Incluir quantidade de sess&otilde;es</span>
+                        </label>
+                    </div>
+                </div>
+                <button onclick="exportScheduleFromModal()" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-medium">
+                    📊 Baixar Planilha Excel
+                </button>
+                <button id="exportReportButton" onclick="exportReportFromModal()" class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium">
+                    📄 Exportar Relatório de Agendamentos
+                </button>
+            </div>
+
+            <!-- Import Section -->
+            <div class="mb-6">
+                <h4 class="text-lg font-bold mb-4 text-blue-700">📥 Importar Dados</h4>
+                <div class="bg-blue-50 p-4 rounded-lg mb-4">
+                    <p class="text-sm text-blue-800 mb-3">
+                        <strong>Regras de Importação:</strong>
+                    </p>
+                    <ul class="text-sm text-blue-700 space-y-1 ml-4">
+                        <li>• Aceita apenas arquivos Excel (.xlsx)</li>
+                        <li>• Nome do profissional deve estar na célula <strong>B1</strong></li>
+                        <li>• Horários na coluna B (B3 a B16) - 7:00 às 19:00</li>
+                        <li>• <strong>Segunda-feira:</strong> C3 a C16</li>
+                        <li>• <strong>Terça-feira:</strong> D3 a D16</li>
+                        <li>• <strong>Quarta-feira:</strong> E3 a E16</li>
+                        <li>• <strong>Quinta-feira:</strong> F3 a F16</li>
+                        <li>• <strong>Sexta-feira:</strong> G3 a G16</li>
+                        <li>• <strong>Sábado:</strong> H3 a H16</li>
+                        <li>• <strong>Domingo:</strong> Ignorado (não há trabalho)</li>
+                        <li>• <strong>Detecção por Cores e Conteúdo:</strong></li>
+                        <li class="ml-4">🟠 Laranja = Atendimento Clínica</li>
+                        <li class="ml-4">🩷 Rosa = Análise</li>
+                        <li class="ml-4">🔵 Azul = Discussão de Caso</li>
+                        <li class="ml-4">🟢 Verde = CLS</li>
+                        <li class="ml-4">🟡 Amarelo Claro = Supervisão (ou texto com "Sup", "Clarissa", "Reinaldo", "Hellen", "Talita", "Thais", "Rosi", "Leticia", "Dimaima", "Natalia Lira", "Poliana")</li>
+                        <li class="ml-4">🟣 Roxo = Treinamento (ou texto com "Trein", "Reun")</li>
+                        <li class="ml-4">🟨 Amarelo Gema = Orientação Parental</li>
+                        <li class="ml-4">⬜ Cinza = Almoço/Deslocamento/Bloqueado</li>
+                        <li>• <strong>ATENÇÃO:</strong> A importação substituirá todos os agendamentos existentes</li>
+                    </ul>
+                </div>
+                
+                <div class="border-2 border-dashed border-blue-300 rounded-lg p-6 text-center">
+                    <input type="file" id="importFile" accept=".xlsx,.csv" class="hidden" onchange="handleFileSelect(event)">
+                    <div id="dropArea" class="cursor-pointer" onclick="document.getElementById('importFile').click()">
+                        <div class="text-4xl mb-2">📁</div>
+                        <p class="text-blue-600 font-medium mb-2">Clique aqui ou arraste o arquivo</p>
+                        <p class="text-sm text-gray-500">Formatos aceitos: .xlsx, .csv</p>
+                    </div>
+                    <div id="fileInfo" class="mt-4 hidden">
+                        <div class="bg-blue-100 p-3 rounded-lg">
+                            <p class="text-sm font-medium text-blue-800" id="fileName"></p>
+                            <button onclick="importSchedule()" class="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                                📥 Importar Dados (processar localmente)
+                            </button>
+                            <button onclick="uploadAndImportServer()" class="mt-2 ml-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm">
+                                ⬆️ Upload e Importar no Servidor
+                            </button>
+                            <button onclick="runImportBenchmark()" class="mt-2 ml-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm">
+                                ⚡ Benchmark
+                            </button>
+                            <button onclick="clearFileSelection()" class="mt-2 ml-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Template Download -->
+            <div class="mb-6">
+                <h4 class="text-lg font-bold mb-4 text-purple-700">📋 Modelo de Planilha</h4>
+                <div class="bg-purple-50 p-4 rounded-lg mb-4">
+                    <p class="text-sm text-purple-800 mb-2">
+                        Baixe um modelo de planilha com a estrutura correta para importação:
+                    </p>
+                </div>
+                <button onclick="downloadTemplate()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-medium">
+                    📋 Baixar Modelo de Planilha
+                </button>
+            </div>
+
+            <!-- Close Button -->
+            <div class="flex justify-center">
+                <button onclick="closeModal('exportModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Confirmation Modal -->
+    <div id="importConfirmationModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 text-center">
+            <h3 class="text-xl font-bold mb-4 text-green-700">✅ Importação Processada</h3>
+            <div class="bg-green-50 p-4 rounded-lg mb-6">
+                <div class="text-lg font-medium text-green-800 mb-2">Dados Encontrados:</div>
+                <div class="space-y-2 text-green-700">
+                    <div id="professionalsCount">👨‍⚕️ <span class="font-bold">0</span> profissionais adicionados</div>
+                    <div id="appointmentsCount">📅 <span class="font-bold">0</span> agendamentos totais</div>
+                </div>
+            </div>
+            <div id="appointmentsWeekInfo" class="bg-blue-50 p-3 rounded-lg mb-6 hidden">
+                <div class="text-sm text-blue-800">
+                    <div class="font-medium mb-2">📅 Semana dos agendamentos:</div>
+                    <div id="weekDateRange" class="text-blue-700 mb-3"></div>
+                    <div class="flex gap-2 justify-center">
+                        <button onclick="shiftAppointmentWeek(-7)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">← Semana anterior</button>
+                        <button onclick="shiftAppointmentWeek(7)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">Próxima semana →</button>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-purple-50 p-4 rounded-lg mb-6">
+                <label class="block text-sm font-medium text-purple-800 mb-2">📅 Aplicar agendamentos na semana:</label>
+                <div class="flex gap-2">
+                    <input type="date" id="targetWeekDatePicker" onchange="applyWeekOffset(this.value)" class="flex-1 p-2 border rounded focus:ring-2 focus:ring-purple-500">
+                    <button onclick="resetWeekOffset()" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded font-medium text-sm">Resetar</button>
+                </div>
+                <div id="weekOffsetInfo" class="text-xs text-purple-700 mt-2 hidden">
+                    ℹ️ Os dias da semana serão mantidos. Apenas a semana será ajustada.
+                </div>
+            </div>
+            <div class="text-sm text-gray-600 mb-6">
+                Deseja aplicar estes dados ao sistema? Esta ação substituirá todos os dados existentes.
+            </div>
+
+            <div class="mb-3 text-sm text-gray-700">
+                <div class="mb-2 font-medium">Onde deseja salvar estes dados?</div>
+                <label class="inline-flex items-center mr-4">
+                    <input type="radio" name="importTarget" id="importTargetServer" class="mr-2" checked>
+                    Salvar na nuvem (tentar enviar ao servidor)
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" name="importTarget" id="importTargetLocal" class="mr-2">
+                    Somente nesta máquina (não enviar para a nuvem)
+                </label>
+                <div class="text-xs text-gray-500 mt-2">Se escolher nuvem, o sistema tentará salvar no servidor; em caso de falha, será feito fallback local.</div>
+            </div>
+
+            <!-- Quick Sync Button -->
+            <div class="flex justify-center mb-4">
+                <button onclick="openSyncModalOld()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-medium">🔁 Sincronizar com a Nuvem</button>
+            </div>
+
+            <!-- Sync Modal -->
+            <div id="syncModal" class="modal">
+                <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 text-center">
+                    <h3 class="text-xl font-bold mb-4 text-yellow-800">🔁 Sincronizar Dados com a Nuvem</h3>
+                    <div class="bg-yellow-50 p-4 rounded-lg mb-6">
+                        <div class="text-lg font-medium text-yellow-800 mb-2">Resumo</div>
+                        <div class="space-y-2 text-yellow-700">
+                            <div id="syncProfessionalsCount">👨‍⚕️ <span class="font-bold">0</span> profissionais a sincronizar</div>
+                            <div id="syncAppointmentsCount">📅 <span class="font-bold">0</span> agendamentos a sincronizar</div>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-600 mb-6">
+                        A sincronização irá **criar somente** os profissionais e agendamentos que ainda não existem no servidor e **atualizar** profissionais que tiveram mudanças (especialidade/ativo).
+                        Itens marcados como "Somente nesta máquina" serão ignorados.
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button id="startSyncBtn" onclick="performFullSync()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-lg font-medium flex-1">🔁 Iniciar Sincronização</button>
+                        <button onclick="closeModal('syncModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium flex-1">Fechar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="confirmImport()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex-1">
+                    ✅ Aceitar
+                </button>
+                <button onclick="cancelImport()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium flex-1">
+                    ❌ Recusar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading / Progress Modal -->
+    <div id="loadingModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 text-center">
+            <h3 id="loadingTitle" class="text-lg font-bold mb-4 text-blue-700">Carregando...</h3>
+            <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                <div id="loadingBar" class="bg-blue-600 h-4 rounded-full" style="width: 0%"></div>
+            </div>
+            <div class="text-sm text-gray-600"><span id="loadingPercent">0%</span> — <span id="loadingMessage">Aguardando...</span></div>
+            <div class="mt-4">
+                <button id="loadingCancelBtn" onclick="cancelImportInProgress()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Conflict Resolution Modal -->
+    <div id="conflictResolutionModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-red-800">⚠️ Resolução de Conflitos de Agendamento</h3>
+            
+            <div class="mb-6 bg-red-50 p-4 rounded-lg">
+                <h4 class="font-bold mb-3 text-red-800">🚨 Conflitos Detectados</h4>
+                <p class="text-sm text-red-700 mb-3">
+                    Os seguintes agendamentos possuem conflitos que precisam ser resolvidos antes da substituição:
+                </p>
+                <div id="conflictsList" class="space-y-3">
+                    <!-- Conflicts will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="mb-6 bg-blue-50 p-4 rounded-lg">
+                <h4 class="font-bold mb-3 text-blue-800">💡 Sugestões de Resolução</h4>
+                <div id="resolutionSuggestions">
+                    <!-- Suggestions will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="flex justify-center gap-3">
+                <button onclick="applyConflictResolutions()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium">
+                    ✅ Aplicar Resoluções
+                </button>
+                <button onclick="closeModal('conflictResolutionModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Time Slot Options Modal -->
+    <div id="timeSlotOptionsModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-blue-800">🕐 Opções de Substituição por Horário</h3>
+            
+            <div class="mb-6 bg-blue-50 p-4 rounded-lg">
+                <div id="timeSlotHeader" class="font-bold text-blue-800 mb-3">
+                    <!-- Header will be populated -->
+                </div>
+                <div class="text-sm text-blue-700">
+                    Selecione o profissional que assumirá este horário. A substituição cancelará o agendamento do profissional ausente e transferirá/cancelará o agendamento atual do substituto.
+                </div>
+            </div>
+            
+            <div id="timeSlotOptionsContent" class="space-y-3">
+                <!-- Options will be loaded here -->
+            </div>
+            
+            <div class="flex justify-center gap-3 mt-6">
+                <button onclick="closeModal('timeSlotOptionsModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Absence Options Modal -->
+    <div id="absenceOptionsModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-red-800">🚨 Opções de Substituição por Falta</h3>
+            
+            <div class="mb-6 bg-red-50 p-4 rounded-lg">
+                <div id="absenceOptionsHeader" class="font-bold text-red-800 mb-3">
+                    <!-- Header will be populated -->
+                </div>
+                <div class="text-sm text-red-700">
+                    Selecione as substituições que deseja aplicar. O sistema priorizou automaticamente as melhores opções.
+                </div>
+            </div>
+            
+            <div id="absenceOptionsContent" class="space-y-4">
+                <!-- Options will be loaded here -->
+            </div>
+            
+            <div class="flex justify-center gap-3 mt-6">
+                <button onclick="applySelectedAbsenceReplacements()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium">
+                    🚨 Aplicar Substituições Selecionadas
+                </button>
+                <button onclick="selectAllAbsenceOptions()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium">
+                    ☑️ Selecionar Todas
+                </button>
+                <button onclick="deselectAllAbsenceOptions()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium">
+                    ☐ Desmarcar Todas
+                </button>
+                <button onclick="closeModal('absenceOptionsModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Rescheduling Modal -->
+    <div id="smartReschedulingModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-amber-800">🤖 Reagendamento Inteligente</h3>
+            
+
+            
+            <!-- Smart Professional Replacement -->
+            <div class="mb-6 bg-purple-50 p-4 rounded-lg">
+                <h4 class="font-bold mb-3 text-purple-800">🔄 Substituição Inteligente de Profissional</h4>
+                <div class="mb-3 bg-purple-100 p-3 rounded-lg">
+                    <p class="text-sm text-purple-800 mb-1">
+                        <strong>📋 Tipos de Agendamento Considerados:</strong>
+                    </p>
+                    <ul class="text-sm text-purple-700 space-y-1 ml-4">
+                        <li>✅ <strong>Atendimento Clínica</strong> - Podem ser transferidos</li>
+                        <li>✅ <strong>Discussão de Caso</strong> - Podem ser transferidos</li>
+                        <li>❌ <strong>CLS, Análise, Supervisão, Treinamento, Bloqueados</strong> - Não são considerados</li>
+                    </ul>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Profissional que está saindo:</label>
+                        <select id="leavingProfessional" onchange="analyzeProfessionalReplacement()" class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500">
+                            <option value="">Selecione o profissional...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Novo profissional substituto:</label>
+                        <select id="replacementProfessional" onchange="checkReplacementCompatibility()" class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500">
+                            <option value="">Selecione o substituto...</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Analysis Results -->
+                <div id="replacementAnalysis" class="mt-4 hidden">
+                    <div class="bg-white p-4 rounded-lg border">
+                        <h5 class="font-bold mb-3 text-gray-800">📊 Análise de Substituição</h5>
+                        <div id="analysisResults"></div>
+                        <div class="mt-4 flex gap-2">
+                            <button onclick="executeSmartReplacement()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-medium">
+                                🔄 Executar Substituição Inteligente
+                            </button>
+                            <button onclick="showConflictResolution()" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded font-medium">
+                                ⚠️ Resolver Conflitos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Smart Absence Replacement -->
+            <div class="mb-6 bg-red-50 p-4 rounded-lg">
+                <h4 class="font-bold mb-3 text-red-800">🚨 Substituição por Falta de Profissional</h4>
+                <div class="mb-4 bg-red-100 p-3 rounded-lg">
+                    <p class="text-sm text-red-800 mb-2">
+                        <strong>Sistema Inteligente de Prioridades:</strong>
+                    </p>
+                    <ul class="text-sm text-red-700 space-y-1 ml-4">
+                        <li>🥇 <strong>1ª Prioridade:</strong> Profissionais com CLS no mesmo horário</li>
+                        <li>🥈 <strong>2ª Prioridade:</strong> Profissionais com Análise no mesmo horário</li>
+                        <li>🥉 <strong>3ª Prioridade:</strong> Profissionais com Supervisão no mesmo horário</li>
+                        <li>🏅 <strong>4ª Prioridade:</strong> Profissionais com Discussão de Caso no mesmo horário</li>
+                        <li>📋 <strong>Última opção:</strong> Profissionais totalmente livres no horário</li>
+                    </ul>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Profissional que faltou:</label>
+                        <select id="absentProfessional" onchange="analyzeAbsenceReplacement()" class="w-full p-2 border rounded focus:ring-2 focus:ring-red-500">
+                            <option value="">Selecione o profissional...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Data da falta:</label>
+                        <input type="date" id="absenceDay" onchange="analyzeAbsenceReplacement()" class="w-full p-2 border rounded focus:ring-2 focus:ring-red-500">
+                    </div>
+                </div>
+                
+                <!-- Absence Analysis Results -->
+                <div id="absenceAnalysis" class="mt-4 hidden">
+                    <div class="bg-white p-4 rounded-lg border">
+                        <h5 class="font-bold mb-3 text-gray-800">🔍 Análise de Disponibilidade por Prioridade</h5>
+                        <div id="absenceResults"></div>
+                        <div class="mt-4 flex gap-2">
+                            <button onclick="executeAbsenceReplacement()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-medium">
+                                🚨 Executar Substituições de Emergência
+                            </button>
+                            <button onclick="showAbsenceOptions()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">
+                                👁️ Ver Todas as Opções
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            
+
+            
+            <!-- Close Button -->
+            <div class="flex justify-center">
+                <button onclick="closeModal('smartReschedulingModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Cancel Modal -->
+    <div id="bulkCancelModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-4 text-center text-red-800">🔄 Alteração de Status em Massa</h3>
+            <div class="mb-4 grid grid-cols-1 md:grid-cols-7 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">📅 Data Inicial:</label>
+                    <input type="date" id="bulkFilterStartDate" onchange="filterBulkAppointments()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">📅 Data Final:</label>
+                    <input type="date" id="bulkFilterEndDate" onchange="filterBulkAppointments()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">👨‍⚕️ Profissional:</label>
+                    <select id="bulkFilterProfessional" onchange="filterBulkAppointments()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                        <option value="">Todos os Profissionais</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">📌 Tipo de Atendimento:</label>
+                    <select id="bulkFilterType" onchange="filterBulkAppointments()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                        <option value="">Todos os Tipos</option>
+                        <option value="clinica">Atendimento Clínica</option>
+                        <option value="analise">Análise</option>
+                        <option value="analise_pago">Análise já paga</option>
+                        <option value="discussao">Discussão de Caso</option>
+                        <option value="cls">CLS</option>
+                        <option value="cls_pre">CLS do pré atendimento</option>
+                        <option value="supervisao">Supervisão</option>
+                        <option value="treinamento">Treinamento</option>
+                        <option value="reuniao_treinamento">Reunião/Treinamento</option>
+                        <option value="orientacao">Orientação Parental</option>
+                        <option value="bloqueado">Bloqueado</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">🎯 Status Atual:</label>
+                    <select id="bulkFilterStatus" onchange="filterBulkAppointments()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                        <option value="">Todos os Status</option>
+                        <option value="agendado">Agendado</option>
+                        <option value="pre_atendimento">Pre atendimento</option>
+                        <option value="confirmado">Confirmado</option>
+                        <option value="chegou">Chegou</option>
+                        <option value="em_atendimento">Em atendimento</option>
+                        <option value="finalizado">Finalizado</option>
+                        <option value="cancelado_profissional">Cancelado (Profissional)</option>
+                        <option value="cancelado_paciente">Cancelado (Paciente)</option>
+                        <option value="faltou">Faltou</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">👤 Nome do Paciente:</label>
+                    <input type="text" id="bulkFilterClient" oninput="filterBulkAppointments()" placeholder="Pesquisar paciente..." class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">✅ Novo Status:</label>
+                    <select id="bulkChangeStatus" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500">
+                        <option value="">Selecione o novo status...</option>
+                        <option value="agendado">Agendado</option>
+                        <option value="pre_atendimento">Pre atendimento</option>
+                        <option value="confirmado">Confirmado</option>
+                        <option value="chegou">Chegou</option>
+                        <option value="em_atendimento">Em atendimento</option>
+                        <option value="finalizado">Finalizado</option>
+                        <option value="cancelado_profissional">Cancelado (Profissional)</option>
+                        <option value="cancelado_paciente">Cancelado (Paciente)</option>
+                        <option value="faltou">Faltou</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4 flex flex-wrap gap-2">
+                <button type="button" onclick="selectAllFiltered()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium">☑️ Selecionar Todos</button>
+                <button type="button" onclick="deselectAll()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium">☐ Desmarcar Todos</button>
+                <button type="button" onclick="clearBulkFilters()" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg font-medium">♻️ Limpar Filtros</button>
+            </div>
+            <div class="mb-4 text-sm text-gray-600">
+                Selecione os agendamentos desejados, filtre por status atual e aplique um novo status em massa ou exclua definitivamente os selecionados.
+            </div>
+            <div class="mb-4">
+                <div class="font-medium mb-2">Resultados: <span id="bulkResultsCount">0 agendamentos</span></div>
+                <div id="bulkAppointmentsList" class="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden"></div>
+            </div>
+            <div class="flex flex-col md:flex-row md:justify-between gap-3">
+                <div class="flex flex-col md:flex-row gap-3">
+                    <button type="button" onclick="confirmBulkStatusSelected()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-medium w-full md:w-auto">🔄 Aplicar Status Selecionados</button>
+                    <button type="button" onclick="openBulkDeleteConfirmModal()" class="bg-gray-900 hover:bg-black text-white px-4 py-3 rounded-lg font-medium w-full md:w-auto">Excluir definitivamente</button>
+                </div>
+                <button type="button" onclick="closeModal('bulkCancelModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium w-full md:w-auto">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Delete Confirmation Modal -->
+    <div id="bulkDeleteConfirmModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-3 text-center text-red-800">Excluir definitivamente</h3>
+            <p class="text-gray-700 mb-4 text-center">
+                Esta ação removerá permanentemente os agendamentos selecionados do sistema e do banco de dados.
+            </p>
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <div class="font-bold text-red-800 mb-2">Agendamentos selecionados: <span id="bulkDeleteSelectedCount">0</span></div>
+                <div class="text-sm text-red-700">Depois de confirmar, esta ação não poderá ser desfeita.</div>
+            </div>
+            <div id="bulkDeleteSelectedList" class="border rounded-lg divide-y max-h-64 overflow-y-auto mb-5"></div>
+            <div class="flex flex-col md:flex-row justify-end gap-3">
+                <button type="button" onclick="closeBulkDeleteConfirmModal()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium">Cancelar</button>
+                <button type="button" onclick="confirmBulkDeleteSelected()" class="bg-red-700 hover:bg-red-800 text-white px-4 py-3 rounded-lg font-medium">Excluir definitivamente</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Remark Request Modal -->
+    <div id="remarkRequestModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-xl font-bold mb-4 text-sky-800">Solicitar remarque</h3>
+            <input type="hidden" id="remarkAppointmentId">
+            <input type="hidden" id="remarkConflictAppointmentId">
+            <div id="remarkAppointmentSummary" class="bg-gray-50 border rounded-lg p-3 text-sm text-gray-700 mb-4"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Nova data:</label>
+                    <input type="date" id="remarkNewDate" onchange="checkRemarkTargetConflict()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Início:</label>
+                    <input type="text" id="remarkNewTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Término:</label>
+                    <input type="text" id="remarkNewEndTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                </div>
+            </div>
+            <div id="remarkConflictWarning" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-900 mb-4"></div>
+            <label id="remarkInvertWrapper" class="hidden items-start gap-2 bg-slate-50 border rounded-lg p-3 text-sm text-gray-700 mb-4">
+                <input type="checkbox" id="remarkInvertTimes" class="mt-1" onchange="checkRemarkTargetConflict()">
+                <span>Solicitar inversão de horários com o agendamento encontrado.</span>
+            </label>
+            <div id="remarkConflictRelocationWrapper" class="hidden bg-slate-50 border rounded-lg p-3 mb-4">
+                <div id="remarkConflictRelocationTitle" class="text-sm font-semibold text-gray-800 mb-3">Realocar agendamento conflitante</div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Data:</label>
+                        <input type="date" id="remarkConflictNewDate" onchange="checkRemarkTargetConflict()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Inicio:</label>
+                        <input type="time" id="remarkConflictNewTime" onchange="checkRemarkTargetConflict()" step="60" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Termino:</label>
+                        <input type="time" id="remarkConflictNewEndTime" onchange="checkRemarkTargetConflict()" step="60" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                    </div>
+                </div>
+                <div id="remarkConflictRelocationWarning" class="hidden mt-3 text-sm text-red-700"></div>
+                <div id="remarkConflictChainContainer" class="space-y-3 mt-3"></div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Observação:</label>
+                <textarea id="remarkReason" rows="3" placeholder="Motivo ou observação para autorização" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500"></textarea>
+            </div>
+            <div class="flex flex-col sm:flex-row justify-end gap-3">
+                <button type="button" onclick="closeModal('remarkRequestModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium">Cancelar</button>
+                <button type="button" onclick="submitRemarkRequest()" class="bg-sky-700 hover:bg-sky-800 text-white px-4 py-3 rounded-lg font-medium">Enviar solicitação</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Remark Requests Queue Modal -->
+    <div id="remarkRequestsModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-2xl font-bold text-sky-800">Solicitações de Remarque</h3>
+                    <p class="text-sm text-gray-600">ATAC, FINANCEIRO e CEO podem autorizar solicitações pendentes.</p>
+                </div>
+                <button type="button" onclick="closeModal('remarkRequestsModal')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-lg">Fechar</button>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div id="remarkConfigStatus" class="text-xs text-green-700">Solicitacoes de remarque ativas.</div>
+                <button type="button" id="remarkToggleButton" onclick="toggleRemarkRequestsEnabled()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm font-medium" style="display: none;">Desativar remarque</button>
+            </div>
+            <div id="remarkRequestsList" class="space-y-3"></div>
+        </div>
+    </div>
+
+    <!-- Remark Notifications Modal -->
+    <div id="remarkNotificationsModal" class="modal" style="z-index: 1100;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-2xl font-bold text-rose-800">Notificacoes</h3>
+                    <p class="text-sm text-gray-600">Retorno das suas solicitacoes de remarque.</p>
+                </div>
+                <button type="button" onclick="closeModal('remarkNotificationsModal')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-lg">Fechar</button>
+            </div>
+            <div id="remarkNotificationsList" class="space-y-3"></div>
+        </div>
+    </div>
+
+    <!-- Rooms Availability Modal -->
+    <div id="roomsAvailabilityModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between gap-3 mb-4">
+                <div>
+                    <h3 class="text-xl font-bold text-gray-900">Salas</h3>
+                    <p id="roomsAvailabilityWeekLabel" class="text-sm text-gray-600 mt-1"></p>
+                </div>
+                <button type="button" onclick="closeModal('roomsAvailabilityModal')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-lg">
+                    Fechar
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 mb-4 md:grid-cols-[auto_auto_1fr_auto]">
+                <div class="flex gap-2">
+                    <button type="button" onclick="previousRoomsAvailabilityWeek()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium">
+                        Anterior
+                    </button>
+                    <button type="button" onclick="nextRoomsAvailabilityWeek()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium">
+                        Proxima
+                    </button>
+                </div>
+                <button type="button" onclick="goToCurrentRoomsAvailabilityWeek()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded-lg text-sm font-medium">
+                    Semana atual
+                </button>
+                <input id="roomsAvailabilitySearch" oninput="renderRoomsAvailability()" type="text" placeholder="Filtrar sala..." class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-cyan-500">
+                <select id="roomsAvailabilityStatusFilter" onchange="renderRoomsAvailability()" class="p-2 border rounded-lg focus:ring-2 focus:ring-cyan-500">
+                    <option value="all">Todas</option>
+                    <option value="available">Disponiveis</option>
+                    <option value="occupied">Ocupadas</option>
+                </select>
+            </div>
+
+            <div id="roomsAvailabilitySummary" class="mb-4 text-sm text-gray-700"></div>
+            <div id="roomsAvailabilityList" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+        </div>
+    </div>
+
+    <!-- Waitlist Modal -->
+    <div id="waitlistModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 id="waitlistModalTitle" class="text-xl font-bold mb-4">Novo Item da Lista</h3>
+            <form onsubmit="saveWaitlistItem(event)">
+                <input type="hidden" id="waitlistItemId">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-2">Paciente:</label>
+                        <select id="waitlistPatientSelect" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="">Selecione o paciente...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Profissional desejado:</label>
+                        <select id="waitlistProfessionalSelect" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="">Sem preferencia</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Sala desejada:</label>
+                        <select id="waitlistRoomSelect" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="">Sem preferencia</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Tipo de Atendimento:</label>
+                        <select id="waitlistType" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="">Sem preferencia</option>
+                            <option value="clinica">Atendimento Clinica</option>
+                            <option value="analise">Analise</option>
+                            <option value="analise_pago">Analise ja paga</option>
+                            <option value="discussao">Discussao de Caso</option>
+                            <option value="cls">CLS</option>
+                            <option value="cls_pre">CLS do pre atendimento</option>
+                            <option value="supervisao">Supervisao</option>
+                            <option value="treinamento">Treinamento</option>
+                            <option value="reuniao_treinamento">Reuniao/Treinamento</option>
+                            <option value="orientacao">Orientacao Parental</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Prioridade:</label>
+                        <select id="waitlistPriority" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="normal">Normal</option>
+                            <option value="alta">Alta</option>
+                            <option value="urgente">Urgente</option>
+                            <option value="baixa">Baixa</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Status:</label>
+                        <select id="waitlistStatus" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                            <option value="aguardando">Aguardando</option>
+                            <option value="em_contato">Em contato</option>
+                            <option value="encaixado">Encaixado</option>
+                            <option value="cancelado">Cancelado</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Dias preferidos:</label>
+                        <input type="text" id="waitlistPreferredDays" placeholder="Ex.: segunda e quarta" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-2">Horarios preferidos:</label>
+                        <input type="text" id="waitlistPreferredTimes" placeholder="Ex.: manha, 14h as 16h" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-2">Observacao:</label>
+                        <textarea id="waitlistObservation" rows="3" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-violet-500"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <button type="submit" class="bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg font-medium flex-1">
+                        Salvar
+                    </button>
+                    <button type="button" onclick="closeModal('waitlistModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Schedule Modal -->
+    <div id="scheduleModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-xl font-bold mb-4" id="scheduleModalTitle">Agendar Consulta</h3>
+            <form onsubmit="saveAppointment(event)">
+                <input type="hidden" id="appointmentId">
+                <input type="hidden" id="appointmentDate">
+                <input type="hidden" id="appointmentTime">
+                
+                <div id="appointmentDetailsTab">
+                    <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Profissional:</label>
+                    <select id="appointmentProfessional" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Selecione o profissional...</option>
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Paciente:</label>
+                    <input type="hidden" id="clientPatientId">
+                    <input type="text" id="clientName" list="patientSuggestionOptions" required placeholder="Nome do paciente" oninput="syncSelectedPatientFromName()" onchange="syncSelectedPatientFromName()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <datalist id="patientSuggestionOptions"></datalist>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Tipo de Atendimento:</label>
+                    <select id="appointmentType" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Selecione...</option>
+                        <option value="clinica">Atendimento Clínica</option>
+                        <option value="analise">Análise</option>
+                        <option value="analise_pago">Análise já paga</option>
+                        <option value="discussao">Discussão de Caso</option>
+                        <option value="cls">CLS</option>
+                        <option value="cls_pre">CLS do pré atendimento</option>
+                        <option value="supervisao">Supervisão</option>
+                        <option value="treinamento">Treinamento</option>
+                        <option value="reuniao_treinamento">Reunião/Treinamento</option>
+                        <option value="orientacao">Orientação Parental</option>
+                        <option value="bloqueado">Horário Bloqueado</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">📅 Data do Agendamento:</label>
+                    <input type="date" id="appointmentDateInput" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Selecione a data do agendamento.</p>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Sala:</label>
+                    <select id="appointmentRoom" required onchange="updateRoomAvailabilityHint()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Selecione a sala...</option>
+                    </select>
+                    <p id="appointmentRoomAvailability" class="text-xs text-gray-500 mt-1">Selecione data, horario e sala para verificar disponibilidade.</p>
+                </div>
+
+                <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Horário de Início:</label>
+                        <input type="text" id="appointmentTimeInput" required placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" list="timeSuggestions">
+                        <p class="text-xs text-gray-500 mt-1">Digite o horário de início no formato HH:MM.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Horário de Término:</label>
+                        <input type="text" id="appointmentEndInput" required placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" list="timeSuggestions">
+                        <p class="text-xs text-gray-500 mt-1">Digite o horário de término no formato HH:MM.</p>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <div class="text-sm font-medium mb-2">Quantidade de sessões:</div>
+                    <div id="appointmentSessionCount" class="text-lg font-semibold text-gray-700">0 sessões</div>
+                </div>
+                <div id="appointmentRepeatWrapper" class="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <label class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                        <input type="checkbox" id="appointmentRepeatEnabled" onchange="toggleAppointmentRepeatOptions()" class="w-4 h-4">
+                        Este agendamento se repete?
+                    </label>
+                    <div id="appointmentRepeatOptions" class="hidden mt-3 space-y-3">
+                        <div>
+                            <div class="text-xs font-medium text-gray-700 mb-2">Dias da semana:</div>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="1" onchange="updateRepeatPreview()"> Segunda</label>
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="2" onchange="updateRepeatPreview()"> Terca</label>
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="3" onchange="updateRepeatPreview()"> Quarta</label>
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="4" onchange="updateRepeatPreview()"> Quinta</label>
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="5" onchange="updateRepeatPreview()"> Sexta</label>
+                                <label class="flex items-center gap-2"><input type="checkbox" class="appointment-repeat-day" value="6" onchange="updateRepeatPreview()"> Sabado</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Quantidade de repeticoes:</label>
+                            <input type="number" id="appointmentRepeatCount" min="1" max="100" value="1" oninput="updateRepeatPreview()" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div id="appointmentRepeatPreview" class="text-xs text-gray-600">Selecione os dias e a quantidade.</div>
+                    </div>
+                </div>
+                <datalist id="timeSuggestions">
+                    <option value="06:00"></option>
+                    <option value="06:30"></option>
+                    <option value="07:00"></option>
+                    <option value="07:30"></option>
+                    <option value="08:00"></option>
+                    <option value="08:30"></option>
+                    <option value="09:00"></option>
+                    <option value="09:30"></option>
+                    <option value="10:00"></option>
+                    <option value="10:30"></option>
+                    <option value="11:00"></option>
+                    <option value="11:30"></option>
+                    <option value="12:00"></option>
+                    <option value="12:30"></option>
+                    <option value="13:00"></option>
+                    <option value="13:30"></option>
+                    <option value="14:00"></option>
+                    <option value="14:30"></option>
+                    <option value="15:00"></option>
+                    <option value="15:30"></option>
+                    <option value="16:00"></option>
+                    <option value="16:30"></option>
+                    <option value="17:00"></option>
+                    <option value="17:30"></option>
+                    <option value="18:00"></option>
+                    <option value="18:30"></option>
+                    <option value="19:00"></option>
+                    <option value="19:30"></option>
+                    <option value="20:00"></option>
+                    <option value="20:30"></option>
+                    <option value="21:00"></option>
+                    <option value="21:30"></option>
+                    <option value="22:00"></option>
+                    <option value="22:30"></option>
+                    <option value="23:00"></option>
+                </datalist>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Observações:</label>
+                    <textarea id="observations" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" rows="3"></textarea>
+                </div>
+
+                <div class="mb-4 flex flex-wrap gap-2">
+                    <button type="button" id="appointmentTabDetailsBtn" onclick="switchAppointmentTab('details')" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium">
+                        Detalhes
+                    </button>
+                    <button type="button" id="appointmentTabActionsBtn" onclick="switchAppointmentTab('actions')" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 text-sm font-medium">
+                        Status e Ações
+                    </button>
+                    <button type="button" id="appointmentTabAuditBtn" onclick="switchAppointmentTab('audit')" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-800 text-sm font-medium hidden">
+                        Histórico
+                    </button>
+                </div>
+                </div>
+                <div id="appointmentActionsTab" class="hidden">
+                    <div id="appointmentActionOptions"></div>
+                </div>
+                <div id="appointmentAuditTab" class="hidden">
+                    <div id="appointmentAuditContent" class="mt-4 pt-4 border-t border-gray-300 text-sm text-gray-700">
+                        Carregando auditoria...
+                    </div>
+                </div>
+                 
+                <div class="flex gap-3">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex-1">
+                        Salvar
+                    </button>
+                    <button type="button" onclick="closeModal('scheduleModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Cancelar
+                    </button>
+                    <button type="button" id="deleteAppointmentBtn" onclick="deleteAppointment()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium" style="display: none;">
+                        Excluir
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Yes/No Confirmation Modal -->
+    <div id="yesNoConfirmModal" class="modal" style="z-index: 1200;">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 id="yesNoConfirmTitle" class="text-xl font-bold mb-3 text-gray-900">Confirmar</h3>
+            <div id="yesNoConfirmMessage" class="text-sm text-gray-700 whitespace-pre-line mb-5"></div>
+            <div class="flex flex-col sm:flex-row justify-end gap-3">
+                <button type="button" id="yesNoConfirmNoBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium">N&atilde;o</button>
+                <button type="button" id="yesNoConfirmYesBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-medium">Sim</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Management Modal -->
+    <div id="userManagementModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 class="text-2xl font-bold mb-6 text-center text-indigo-800">👥 Gerenciamento de Usuários</h3>
+            
+            <!-- Create New User Section -->
+            <div class="mb-8 bg-green-50 p-6 rounded-lg">
+                <h4 class="text-lg font-bold mb-4 text-green-800">➕ Criar Novo Usuário</h4>
+                <form onsubmit="createNewUser(event)" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">👤 Nome Completo:</label>
+                        <input type="text" id="newUserName" required 
+                               class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                               placeholder="Ex: Dr. João Silva">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">🔑 Nome de Usuário:</label>
+                        <input type="text" id="newUsername" required 
+                               class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                               placeholder="Ex: joao.silva" pattern="[a-zA-Z0-9._-]+" 
+                               title="Apenas letras, números, pontos, hífens e underscores">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">🔒 Senha:</label>
+                        <input type="password" id="newUserPassword" required minlength="6"
+                               class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                               placeholder="Mínimo 6 caracteres">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">🏆 Nível de Acesso:</label>
+                        <select id="newUserLevel" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                            <option value="">Selecione o nível...</option>
+                            <option value="admin">👑 Administrador (Acesso Total)</option>
+                            <option value="editor">✏️ Editor (Criar e Editar)</option>
+                            <option value="viewer">👁️ Visualizador (Apenas Ver)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">👨‍⚕️ Profissional Vinculado:</label>
+                        <select id="newUserProfessional" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
+                            <option value="">Selecione o profissional...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-2">📝 Observações (Opcional):</label>
+                        <input type="text" id="newUserNotes" 
+                               class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
+                               placeholder="Ex: Terapeuta ABA, Supervisor de Equipe, etc.">
+                    </div>
+                    
+                    <div class="md:col-span-2 flex gap-3">
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex-1">
+                            ➕ Criar Usuário
+                        </button>
+                        <button type="button" onclick="clearNewUserForm()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium">
+                            🧹 Limpar
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Users List Section -->
+            <div class="mb-6">
+                <h4 class="text-lg font-bold mb-4 text-indigo-800">📋 Usuários Cadastrados</h4>
+                
+                <!-- Search and Filter -->
+                <div class="mb-4 bg-gray-50 p-4 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">🔍 Pesquisar:</label>
+                            <input type="text" id="userSearchInput" onkeyup="filterUsers()" 
+                                   class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500"
+                                   placeholder="Nome ou usuário...">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">🏆 Filtrar por Nível:</label>
+                            <select id="userLevelFilter" onchange="filterUsers()" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                                <option value="">Todos os níveis</option>
+                                <option value="admin">👑 Administradores</option>
+                                <option value="editor">✏️ Editores</option>
+                                <option value="viewer">👁️ Visualizadores</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="clearUserFilters()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
+                                🧹 Limpar Filtros
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Users Table -->
+                <div id="usersTableContainer" class="overflow-x-auto">
+                    <!-- Users will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="mb-6 bg-blue-50 p-4 rounded-lg">
+                <h5 class="font-bold text-blue-800 mb-3">📊 Estatísticas de Usuários</h5>
+                <div id="userStats" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <!-- Stats will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Close Button -->
+            <div class="flex justify-center">
+                <button onclick="closeModal('userManagementModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 class="text-xl font-bold mb-4 text-blue-800">✏️ Editar Usuário</h3>
+            <form onsubmit="saveUserEdit(event)">
+                <input type="hidden" id="editUserId">
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">👤 Nome Completo:</label>
+                    <input type="text" id="editUserName" required 
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">🔑 Nome de Usuário:</label>
+                    <input type="text" id="editUsername" required 
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                           pattern="[a-zA-Z0-9._-]+" readonly>
+                    <div class="text-xs text-gray-500 mt-1">⚠️ Nome de usuário não pode ser alterado</div>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">🔒 Nova Senha (deixe vazio para manter):</label>
+                    <input type="password" id="editUserPassword" minlength="6"
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                           placeholder="Digite nova senha ou deixe vazio">
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">🏆 Nível de Acesso:</label>
+                    <select id="editUserLevel" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="admin">👑 Administrador (Acesso Total)</option>
+                        <option value="editor">✏️ Editor (Criar e Editar)</option>
+                        <option value="viewer">👁️ Visualizador (Apenas Ver)</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">👨‍⚕️ Profissional Vinculado:</label>
+                    <select id="editUserProfessional" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Selecione o profissional...</option>
+                    </select>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium mb-2">📝 Observações:</label>
+                    <input type="text" id="editUserNotes" 
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div class="flex gap-3">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex-1">
+                        💾 Salvar Alterações
+                    </button>
+                    <button type="button" onclick="closeModal('editUserModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal active">
+        <div class="bg-white rounded-lg p-8 w-full max-w-md mx-4">
+            <div class="text-center mb-6">
+                <div class="text-4xl mb-3">🔐</div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Sistema Clinica de agendamentos</h2>
+                <p class="text-gray-600">Acesso Restrito</p>
+            </div>
+            
+            <form onsubmit="performLogin(event)">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">👤 Usuário:</label>
+                    <input type="text" id="loginUsername" required 
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                           placeholder="Digite seu usuário">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium mb-2">🔑 Senha:</label>
+                    <input type="password" id="loginPassword" required 
+                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                           placeholder="Digite sua senha">
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium mb-4">
+                    🚪 Entrar no Sistema
+                </button>
+                
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h4 class="font-bold text-gray-800 mb-2">📋 Níveis de Acesso:</h4>
+                    <div class="text-sm text-gray-600 space-y-1">
+                        <div><strong>👑 Administrador:</strong> Acesso total + exclusões</div>
+                        <div><strong>✏️ Editor:</strong> Criar e editar (sem excluir)</div>
+                        <div><strong>👁️ Visualizador:</strong> Apenas visualizar</div>
+                    </div>
+                </div>
+                
+                <div id="loginError" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden">
+                    ❌ Usuário ou senha incorretos!
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Remote update refresh modal -->
+    <div id="refreshModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div class="mb-4">
+                <h3 class="text-2xl font-bold text-gray-800 mb-2">Atualizações disponíveis</h3>
+                <p class="text-gray-600">Foram detectadas alterações no servidor. Deseja atualizar a agenda agora?</p>
+            </div>
+            <div class="flex gap-3 mt-4">
+                <button onclick="refreshFromServer()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium">
+                    🔄 Atualizar agora
+                </button>
+                <button onclick="dismissServerUpdatePrompt()" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-3 rounded-lg font-medium">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Sincronização com Supabase (apenas para admins) -->
+    <div id="supabaseSyncModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-cyan-800">☁️ Sincronizar com Supabase</h3>
+                <button onclick="closeModal('supabaseSyncModal')" class="text-gray-500 hover:text-gray-700 text-2xl">✕</button>
+            </div>
+
+            <div class="bg-cyan-50 p-4 rounded-lg mb-6">
+                <h4 class="font-bold text-cyan-800 mb-3">📊 Resumo de Dados</h4>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white p-3 rounded-lg border-l-4 border-cyan-500">
+                        <div class="text-sm text-gray-600">Profissionais</div>
+                        <div id="supaSyncProfCount" class="text-2xl font-bold text-cyan-600">0</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border-l-4 border-cyan-500">
+                        <div class="text-sm text-gray-600">Agendamentos</div>
+                        <div id="supaSyncAptCount" class="text-2xl font-bold text-cyan-600">0</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border-l-4 border-blue-500">
+                        <div class="text-sm text-gray-600">Usuários</div>
+                        <div id="supaSyncUserCount" class="text-2xl font-bold text-blue-600">0</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border-l-4 border-purple-500">
+                        <div class="text-sm text-gray-600">Status</div>
+                        <div id="supaSyncStatus" class="text-xl font-bold text-purple-600">Aguardando</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
+                <h4 class="font-bold text-yellow-800 mb-2">⚠️ Importante</h4>
+                <ul class="text-sm text-yellow-700 space-y-1">
+                    <li>• Todos os profissionais cadastrados serão sincronizados</li>
+                    <li>• Todos os agendamentos criados serão sincronizados</li>
+                    <li>• Todos os usuários do sistema serão sincronizados</li>
+                    <li>• A sincronização é segura e criptografada</li>
+                    <li>• Você precisa estar conectado à internet</li>
+                </ul>
+            </div>
+
+            <div class="space-y-4">
+                <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input type="checkbox" id="syncProfessionals" checked class="w-4 h-4">
+                    <span class="font-medium">👨‍⚕️ Sincronizar Profissionais</span>
+                </label>
+                
+                <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input type="checkbox" id="syncAppointments" checked class="w-4 h-4">
+                    <span class="font-medium">📅 Sincronizar Agendamentos</span>
+                </label>
+                
+                <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input type="checkbox" id="syncUsers" checked class="w-4 h-4">
+                    <span class="font-medium">👥 Sincronizar Usuários</span>
+                </label>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="supaSyncProgress" class="hidden mt-6">
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span id="supaSyncProgressLabel">Sincronizando...</span>
+                        <span id="supaSyncProgressPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div id="supaSyncProgressBar" class="bg-cyan-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div id="supaSyncLog" class="bg-gray-100 p-3 rounded-lg text-xs text-gray-700 max-h-40 overflow-y-auto space-y-1">
+                    <!-- Logs will be added here -->
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button id="startSupaSyncBtn" onclick="startSupabaseSyncWithAllData()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg font-medium flex-1 transition-colors">
+                    ☁️ Iniciar Sincronização
+                </button>
+                <button id="closeSupaSyncBtn" onclick="closeModal('supabaseSyncModal')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium flex-1 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    
+    <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+    <script src="static/app.js?v=20260502-header-logo-v1"></script>
+    <script>
+        async function testarPython() {
+            const resp = await window.pywebview.api.ping();
+            console.log("Resposta do Python:", resp);
+        }
+
+        testarPython();
+    </script>
+</body>
+</html>

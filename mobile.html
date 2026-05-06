@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Clinica Leticia Segretti Mobile</title>
+    <link rel="stylesheet" href="static/mobile.css">
+</head>
+<body>
+    <main class="mobile-shell">
+        <section id="loginView" class="login-view">
+            <div class="brand-block">
+                <img src="logo.png" alt="Clinica Leticia Segretti" class="brand-logo">
+                <p class="eyebrow">App mobile</p>
+                <h1>Agenda e remarque</h1>
+            </div>
+
+            <form id="loginForm" class="panel login-panel">
+                <label>
+                    Usuario
+                    <input id="usernameInput" name="username" autocomplete="username" required>
+                </label>
+                <label>
+                    Senha
+                    <input id="passwordInput" name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <button class="primary-button" type="submit">Entrar</button>
+                <button id="apiConfigToggle" class="secondary-button" type="button">Conexao</button>
+                <p id="loginMessage" class="form-message" role="status"></p>
+            </form>
+        </section>
+
+        <section id="appView" class="app-view hidden">
+            <header class="app-header">
+                <div>
+                    <p class="eyebrow">Clinica</p>
+                    <h1>Agenda mobile</h1>
+                    <p id="userSummary" class="muted-text"></p>
+                </div>
+                <div class="header-actions">
+                    <button id="appApiConfigButton" class="icon-button" type="button" title="Conexao" aria-label="Conexao">API</button>
+                    <button id="logoutButton" class="icon-button" type="button" title="Sair" aria-label="Sair">Sair</button>
+                </div>
+            </header>
+
+            <nav class="tab-bar" aria-label="Navegacao mobile">
+                <button class="tab-button active" type="button" data-tab="agenda">Agenda</button>
+                <button class="tab-button" type="button" data-tab="remarques">Remarques</button>
+            </nav>
+
+            <section id="agendaTab" class="tab-panel">
+                <div class="panel filter-panel">
+                    <label>
+                        Data
+                        <input id="agendaDateInput" type="date">
+                    </label>
+                    <label>
+                        Profissional
+                        <select id="professionalFilter">
+                            <option value="">Todos</option>
+                        </select>
+                    </label>
+                    <button id="refreshAgendaButton" class="secondary-button" type="button">Atualizar</button>
+                </div>
+
+                <div id="agendaSummary" class="summary-row"></div>
+                <div id="agendaList" class="stack-list" aria-live="polite"></div>
+            </section>
+
+            <section id="remarquesTab" class="tab-panel hidden">
+                <div class="panel filter-panel">
+                    <label>
+                        Status
+                        <select id="remarkStatusFilter">
+                            <option value="pendente">Pendentes</option>
+                            <option value="">Todos</option>
+                            <option value="aprovado">Aprovados</option>
+                            <option value="reprovado">Reprovados</option>
+                        </select>
+                    </label>
+                    <button id="refreshRemarksButton" class="secondary-button" type="button">Atualizar</button>
+                </div>
+                <div id="remarkList" class="stack-list" aria-live="polite"></div>
+            </section>
+        </section>
+    </main>
+
+    <section id="appointmentSheet" class="sheet hidden" aria-modal="true" role="dialog">
+        <div class="sheet-backdrop" data-close-sheet></div>
+        <div class="sheet-panel">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div>
+                    <p id="sheetTime" class="eyebrow"></p>
+                    <h2 id="sheetPatient"></h2>
+                    <p id="sheetMeta" class="muted-text"></p>
+                </div>
+                <button class="icon-button" type="button" data-close-sheet aria-label="Fechar">Fechar</button>
+            </div>
+
+            <div id="sheetStatus" class="status-pill"></div>
+
+            <div class="action-grid">
+                <button class="secondary-button" type="button" data-status-action="chegou">Chegou</button>
+                <button class="secondary-button" type="button" data-status-action="em_atendimento">Em atendimento</button>
+                <button class="primary-button" type="button" data-status-action="finalizado">Finalizar</button>
+                <button class="danger-button" type="button" data-status-action="faltou">Faltou</button>
+            </div>
+
+            <form id="remarkForm" class="remark-form">
+                <h3>Solicitar remarque</h3>
+                <div class="form-grid">
+                    <label>
+                        Nova data
+                        <input id="remarkDateInput" type="date" required>
+                    </label>
+                    <label>
+                        Inicio
+                        <input id="remarkStartInput" type="time" required>
+                    </label>
+                    <label>
+                        Termino
+                        <input id="remarkEndInput" type="time" required>
+                    </label>
+                </div>
+                <label>
+                    Observacao
+                    <textarea id="remarkReasonInput" rows="3" placeholder="Motivo ou orientacao para aprovacao"></textarea>
+                </label>
+                <button class="secondary-button full-width" type="submit">Enviar remarque</button>
+                <p id="sheetMessage" class="form-message" role="status"></p>
+            </form>
+        </div>
+    </section>
+
+    <section id="apiConfigSheet" class="sheet hidden" aria-modal="true" role="dialog">
+        <div class="sheet-backdrop" data-close-api-config></div>
+        <div class="sheet-panel api-config-panel">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <div>
+                    <p class="eyebrow">Mobile</p>
+                    <h2>Conexao</h2>
+                    <p id="apiConfigSummary" class="muted-text"></p>
+                </div>
+                <button class="icon-button" type="button" data-close-api-config aria-label="Fechar">Fechar</button>
+            </div>
+
+            <form id="apiConfigForm" class="api-config-form">
+                <label>
+                    Endereco da API
+                    <input id="apiBaseInput" type="url" placeholder="https://seu-servidor.com">
+                </label>
+                <div class="button-row">
+                    <button id="saveApiBaseButton" class="primary-button" type="submit">Salvar</button>
+                    <button id="testApiBaseButton" class="secondary-button" type="button">Testar</button>
+                </div>
+                <p id="apiConfigMessage" class="form-message" role="status"></p>
+            </form>
+        </div>
+    </section>
+
+    <script src="static/mobile.js"></script>
+</body>
+</html>

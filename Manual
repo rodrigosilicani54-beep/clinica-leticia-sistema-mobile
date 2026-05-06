@@ -1,0 +1,16 @@
+🔒 Importante – Permissões de Usuário
+
+O usuário administrador padrão do sistema não possui permissão para excluir registros.
+
+Sua função é:
+✔ Criar usuários
+✔ Definir níveis de acesso, como:
+
+Visualizador
+Editor
+Administrador
+
+Para realizar ações mais sensíveis, como exclusões e outras validações críticas, é necessário criar e utilizar um usuário administrador cadastrado no sistema (usuário mestre).
+
+Recomendação:
+Sempre utilize um usuário Administrador para operações administrativas completas, garantindo o correto funcionamento das permissões do sistema.
