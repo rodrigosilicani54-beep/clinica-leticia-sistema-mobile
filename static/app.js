@@ -742,9 +742,11 @@
             Promise.all([
                 fetchProfessionalsFromServer(),
                 fetchRoomsFromServer(),
+                fetchPatientsFromServer(),
                 fetchAppointmentsFromServer(),
                 fetchRemarkConfigFromServer(),
-                fetchRemarkRequestsFromServer()
+                fetchRemarkRequestsFromServer(),
+                fetchWaitlistFromServer()
             ])
             .then(() => {
                 updateProfessionalFilter();
@@ -842,6 +844,8 @@
             return {
                 agendamentos: state.agendamentos || {},
                 profissionais: state.profissionais || {},
+                pacientes: state.pacientes || {},
+                lista_espera: state.lista_espera || {},
                 configuracoes: state.configuracoes || {},
                 remarques: state.remarques || {}
             };
@@ -874,7 +878,9 @@
 
             const configChanged = isSyncSectionChanged(previousState, nextState, 'configuracoes');
             const remarquesChanged = isSyncSectionChanged(previousState, nextState, 'remarques');
-            if (!configChanged && !remarquesChanged) return;
+            const patientsChanged = isSyncSectionChanged(previousState, nextState, 'pacientes');
+            const waitlistChanged = isSyncSectionChanged(previousState, nextState, 'lista_espera');
+            if (!configChanged && !remarquesChanged && !patientsChanged && !waitlistChanged) return;
 
             const refreshTasks = [];
             if (configChanged) {
@@ -882,6 +888,13 @@
             }
             if (remarquesChanged) {
                 refreshTasks.push(fetchRemarkRequestsFromServer({ force: true }));
+            }
+            if (patientsChanged) {
+                refreshTasks.push(fetchPatientsFromServer());
+            }
+            if (waitlistChanged) {
+                waitlistFetchPromise = null;
+                refreshTasks.push(fetchWaitlistFromServer({ force: true }));
             }
 
             await Promise.allSettled(refreshTasks);
@@ -895,6 +908,14 @@
             const requestsModal = document.getElementById('remarkRequestsModal');
             if (remarquesChanged && requestsModal && requestsModal.classList.contains('active')) {
                 renderRemarkRequestsList();
+            }
+
+            const patientModal = document.getElementById('patientListModal');
+            if (patientsChanged && patientModal && patientModal.classList.contains('active')) {
+                renderPatientList(patientListCache);
+            }
+            if (waitlistChanged && currentView === 'waitlist') {
+                renderWaitlist();
             }
         }
 
@@ -963,9 +984,11 @@
             showLoading('Atualizando dados', 'Buscando alterações no servidor...');
             await fetchProfessionalsFromServer();
             await fetchRoomsFromServer();
+            await fetchPatientsFromServer();
             await fetchAppointmentsFromServer({ force: true });
             await fetchRemarkConfigFromServer();
             await fetchRemarkRequestsFromServer({ force: true });
+            await fetchWaitlistFromServer({ force: true });
             lastServerSyncState = await fetchServerSyncState();
             lastFullServerCheckAt = Date.now();
             updateRemarkConfigUi();
@@ -2788,23 +2811,32 @@
             container.innerHTML = '';
             emptyState.classList.add('hidden');
 
-            const localPatients = JSON.parse(localStorage.getItem('patients') || '[]');
+            fetchPatientsFromServer()
+                .then(patients => renderPatientList(patients))
+                .catch(() => renderPatientList(patientListCache || []));
+        }
 
-            fetch(apiUrl('/api/pacientes'))
-                        .then(res => res.json())
-                .then(data => {
-                    const patients = (data && data.success && Array.isArray(data.pacientes)) ? data.pacientes : localPatients;
-                    patientListCache = patients.length ? patients : localPatients;
-                    renderPatientList(patientListCache);
-                    updatePatientSuggestions();
-                    syncSelectedPatientFromName();
-                })
-                .catch(() => {
-                    patientListCache = localPatients;
-                    renderPatientList(localPatients);
-                    updatePatientSuggestions();
-                    syncSelectedPatientFromName();
-                });
+        async function fetchPatientsFromServer() {
+            let localPatients = [];
+            try {
+                localPatients = JSON.parse(localStorage.getItem('patients') || '[]');
+            } catch (err) {
+                localPatients = [];
+            }
+
+            try {
+                const response = await fetch(apiUrl('/api/pacientes'), { cache: 'no-store' });
+                const data = await response.json();
+                const patients = (data && data.success && Array.isArray(data.pacientes)) ? data.pacientes : localPatients;
+                patientListCache = patients.length ? patients : localPatients;
+                localStorage.setItem('patients', JSON.stringify(patientListCache));
+            } catch (err) {
+                patientListCache = localPatients;
+            }
+
+            updatePatientSuggestions();
+            syncSelectedPatientFromName();
+            return patientListCache;
         }
 
         function updatePatientSuggestions() {
@@ -5318,16 +5350,20 @@
             }
         }
 
-        async function fetchWaitlistFromServer() {
+        async function fetchWaitlistFromServer(options = {}) {
             if (!canManageWaitlist()) {
                 waitlistItems = [];
                 return waitlistItems;
+            }
+            if (options.force) {
+                waitlistFetchPromise = null;
             }
             if (waitlistFetchPromise) return waitlistFetchPromise;
             waitlistFetchPromise = (async () => {
                 try {
                     const response = await fetch('http://127.0.0.1:5000/api/lista-espera', {
-                        headers: getAuthenticatedHeaders(false)
+                        headers: getAuthenticatedHeaders(false),
+                        cache: 'no-store'
                     });
                     const data = await response.json();
                     const items = data?.itens || data?.lista_espera;
@@ -5354,7 +5390,7 @@
             if (force) {
                 waitlistFetchPromise = null;
             }
-            await fetchWaitlistFromServer();
+            await fetchWaitlistFromServer({ force });
             renderWaitlist();
         }
 

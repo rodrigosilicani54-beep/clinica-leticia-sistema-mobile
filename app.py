@@ -1143,6 +1143,20 @@ def get_table_columns_cached(cur, table_name, refresh=False):
     return columns
 
 
+def ensure_table_updated_timestamp(cur, table_name, columns=None):
+    allowed_tables = {'agendamentos', 'profissionais', 'pacientes'}
+    if table_name not in allowed_tables:
+        raise ValueError(f'Tabela sem suporte para atualizado_em: {table_name}')
+
+    columns = columns or get_table_columns_cached(cur, table_name)
+    if 'atualizado_em' not in columns:
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW()")
+        columns.add('atualizado_em')
+        with TABLE_COLUMNS_CACHE_LOCK:
+            TABLE_COLUMNS_CACHE[str(table_name).lower()] = columns
+    return columns
+
+
 def get_agendamentos_list_cache(cache_key):
     if AGENDAMENTOS_LIST_CACHE_TTL_SECONDS <= 0:
         return None
@@ -2416,7 +2430,7 @@ def criar_profissional():
         conn = get_connection()
         cur = conn.cursor()
 
-        professional_cols = get_table_columns_cached(cur, 'profissionais')
+        professional_cols = ensure_table_updated_timestamp(cur, 'profissionais', get_table_columns_cached(cur, 'profissionais'))
         ensure_professional_extra_columns(cur, professional_cols)
 
         insert_columns = ['nome', 'especialidade', 'ativo']
@@ -2500,7 +2514,7 @@ def listar_profissionais():
     try:
         conn = get_connection()
         cur = conn.cursor()
-        professional_cols = get_table_columns_cached(cur, 'profissionais')
+        professional_cols = ensure_table_updated_timestamp(cur, 'profissionais', get_table_columns_cached(cur, 'profissionais'))
         ensure_professional_extra_columns(cur, professional_cols)
         conn.commit()
 
@@ -2604,7 +2618,7 @@ def criar_paciente():
     try:
         conn = get_connection()
         cur = conn.cursor()
-        patient_cols = get_table_columns_cached(cur, 'pacientes')
+        patient_cols = ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
 
         insert_columns = ['nome', 'data_nascimento', 'endereco', 'nome_mae', 'nome_pai', 'convenio', 'telefone']
         values = [nome, data_nascimento, endereco, nome_mae, nome_pai, convenio, telefone]
@@ -2659,7 +2673,8 @@ def listar_pacientes():
     try:
         conn = get_connection()
         cur = conn.cursor()
-        patient_cols = get_table_columns_cached(cur, 'pacientes')
+        ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
+        conn.commit()
 
         select_fields = ['id', 'nome', 'data_nascimento', 'endereco', 'nome_mae', 'nome_pai', 'convenio', 'telefone']
         has_ativo = 'ativo' in patient_cols
@@ -2721,7 +2736,8 @@ def atualizar_paciente(paciente_id):
 
     conn = get_connection()
     cur = conn.cursor()
-    patient_cols = get_table_columns_cached(cur, 'pacientes')
+    patient_cols = ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
+    conn.commit()
     cur.close()
     conn.close()
 
@@ -2766,6 +2782,8 @@ def atualizar_paciente(paciente_id):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        if 'atualizado_em' in patient_cols:
+            fields.append('atualizado_em = NOW()')
         return_phone_field = phone_column_name or 'NULL AS telefone'
         return_ativo_field = 'ativo' if 'ativo' in patient_cols else 'TRUE AS ativo'
         query = f"UPDATE pacientes SET {', '.join(fields)} WHERE id = %s RETURNING id, nome, data_nascimento, endereco, {return_phone_field}, nome_mae, nome_pai, convenio, {return_ativo_field}, criado_em"
@@ -2813,9 +2831,12 @@ def excluir_paciente(paciente_id):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        patient_cols = get_table_columns_cached(cur, 'pacientes')
+        patient_cols = ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
         if 'ativo' in patient_cols:
-            cur.execute('UPDATE pacientes SET ativo = FALSE WHERE id = %s RETURNING id', (paciente_id,))
+            if 'atualizado_em' in patient_cols:
+                cur.execute('UPDATE pacientes SET ativo = FALSE, atualizado_em = NOW() WHERE id = %s RETURNING id', (paciente_id,))
+            else:
+                cur.execute('UPDATE pacientes SET ativo = FALSE WHERE id = %s RETURNING id', (paciente_id,))
         else:
             cur.execute('DELETE FROM pacientes WHERE id = %s RETURNING id', (paciente_id,))
 
@@ -3750,7 +3771,7 @@ def atualizar_profissional(prof_id):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        professional_cols = get_table_columns_cached(cur, 'profissionais')
+        professional_cols = ensure_table_updated_timestamp(cur, 'profissionais', get_table_columns_cached(cur, 'profissionais'))
         ensure_professional_extra_columns(cur, professional_cols)
 
         fields = []
@@ -3801,6 +3822,8 @@ def atualizar_profissional(prof_id):
         if len(fields) == 0:
             return jsonify({'success': False, 'error': 'Nada para atualizar'}), 400
 
+        if 'atualizado_em' in professional_cols:
+            fields.append('atualizado_em = NOW()')
         values.append(prof_id)
         sql = f"UPDATE profissionais SET {', '.join(fields)} WHERE id = %s"
         cur.execute(sql, tuple(values))
@@ -4707,12 +4730,22 @@ def sync_state():
         cur.execute(f"SELECT COUNT(*), MAX({appointment_timestamp}) FROM agendamentos")
         appointment_count, appointment_max = cur.fetchone()
 
-        professional_cols = get_table_columns_cached(cur, 'profissionais')
-        professional_timestamp = 'criado_em'
-        if 'atualizado_em' in professional_cols:
-            professional_timestamp = "GREATEST(COALESCE(atualizado_em, criado_em), criado_em)"
+        professional_cols = ensure_table_updated_timestamp(cur, 'profissionais', get_table_columns_cached(cur, 'profissionais'))
+        professional_timestamp = "GREATEST(COALESCE(atualizado_em, criado_em), criado_em)"
         cur.execute(f"SELECT COUNT(*), MAX({professional_timestamp}) FROM profissionais")
         professional_count, professional_max = cur.fetchone()
+
+        ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
+        patient_timestamp = "GREATEST(COALESCE(atualizado_em, criado_em), criado_em)"
+        cur.execute(f"SELECT COUNT(*), MAX({patient_timestamp}) FROM pacientes")
+        patient_count, patient_max = cur.fetchone()
+
+        ensure_lista_espera_table(cur)
+        cur.execute("""
+            SELECT COUNT(*), MAX(GREATEST(COALESCE(atualizado_em, criado_em), criado_em))
+            FROM lista_espera
+        """)
+        waitlist_count, waitlist_max = cur.fetchone()
 
         ensure_app_config_table(cur)
         cur.execute("SELECT COUNT(*), MAX(atualizado_em) FROM sistema_configuracoes")
@@ -4743,6 +4776,14 @@ def sync_state():
             'profissionais': {
                 'count': professional_count or 0,
                 'max_timestamp': format_sync_timestamp(professional_max)
+            },
+            'pacientes': {
+                'count': patient_count or 0,
+                'max_timestamp': format_sync_timestamp(patient_max)
+            },
+            'lista_espera': {
+                'count': waitlist_count or 0,
+                'max_timestamp': format_sync_timestamp(waitlist_max)
             },
             'configuracoes': {
                 'count': config_count or 0,
