@@ -11,6 +11,16 @@
         let remarkCanAuthorizeFromServer = null;
         let remarkRequestsEnabled = localStorage.getItem('remarkRequestsEnabled') !== 'false';
         let remarkCanManageConfigFromServer = false;
+        const LOCAL_API_BASE = 'http://127.0.0.1:5000';
+
+        function apiUrl(path) {
+            if (/^https?:\/\//i.test(path)) return path;
+            const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+                return normalizedPath;
+            }
+            return `${LOCAL_API_BASE}${normalizedPath}`;
+        }
 
         professionals = professionals.map(prof => ({
             ...prof,
@@ -332,7 +342,7 @@
                 const userData = JSON.parse(savedUser);
 
                 // Try server authentication first to ensure server-side users are valid
-                fetch('http://127.0.0.1:5000/api/authenticate', {
+                fetch(apiUrl('/api/authenticate'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: userData.username, password: userData.password })
@@ -387,7 +397,7 @@
             const password = document.getElementById('loginPassword').value;
 
             // Try server authentication first
-            fetch('http://127.0.0.1:5000/api/authenticate', {
+            fetch(apiUrl('/api/authenticate'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: username, password: password })
@@ -525,7 +535,7 @@
                 }
             }
 
-            fetch('http://127.0.0.1:5000/api/me')
+            fetch(apiUrl('/api/me'))
                 .then(res => res.ok ? res.json() : Promise.reject(res))
                 .then(data => {
                     if (data && data.success && data.user) {
@@ -547,7 +557,7 @@
             const username = document.getElementById('loginUsername').value.toLowerCase();
             const password = document.getElementById('loginPassword').value;
 
-            fetch('http://127.0.0.1:5000/api/authenticate', {
+            fetch(apiUrl('/api/authenticate'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: username, password: password })
@@ -602,7 +612,7 @@
 
         function logout() {
             if (confirm('🚪 Deseja realmente sair do sistema?')) {
-                fetch('http://127.0.0.1:5000/api/logout', { method: 'POST' }).catch(() => {});
+                fetch(apiUrl('/api/logout'), { method: 'POST' }).catch(() => {});
                 // Clear user session
                 localStorage.removeItem('currentUser');
                 currentUser = null;
