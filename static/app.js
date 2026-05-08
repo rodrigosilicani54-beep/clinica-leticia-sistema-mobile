@@ -9,7 +9,7 @@
         let waitlistFetchPromise = null;
         let waitlistOptionsFetchPromise = null;
         let remarkCanAuthorizeFromServer = null;
-        let remarkRequestsEnabled = localStorage.getItem('remarkRequestsEnabled') !== 'false';
+        let remarkRequestsEnabled = true;
         let remarkCanManageConfigFromServer = false;
         const LOCAL_API_BASE = 'http://127.0.0.1:5000';
 
@@ -5743,7 +5743,7 @@
             });
         }
 
-        function showAppointmentActionOptions(appointment) {
+        function showAppointmentActionOptions(appointment, options = {}) {
             const status = normalizeScheduleStatus(appointment.status || 'agendado');
             const container = document.getElementById('appointmentActionOptions');
             
@@ -5865,8 +5865,28 @@
                     </div>
                 </div>
             `;
-            
+
             container.innerHTML = html;
+
+            if (!options.skipRemarkConfigRefresh) {
+                refreshRemarkConfigForOpenAppointment(appointment);
+            }
+        }
+
+        function refreshRemarkConfigForOpenAppointment(appointment) {
+            const before = remarkRequestsEnabled;
+            fetchRemarkConfigFromServer({ force: true })
+                .then(() => {
+                    const currentAppointmentId = document.getElementById('appointmentId')?.value;
+                    if (String(currentAppointmentId || '') !== String(appointment.id || '')) {
+                        return;
+                    }
+                    if (before !== remarkRequestsEnabled) {
+                        const latestAppointment = getAppointmentById(appointment.id) || appointment;
+                        showAppointmentActionOptions(latestAppointment, { skipRemarkConfigRefresh: true });
+                    }
+                })
+                .catch(() => null);
         }
 
         function setAppointmentSavingState(isSaving) {
