@@ -232,6 +232,35 @@ h3 {
     padding: 12px;
 }
 
+.agenda-nav {
+    display: grid;
+    grid-template-columns: 44px 1fr 1fr 44px;
+    gap: 8px;
+}
+
+.nav-button {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--primary-dark);
+    font-size: 1.38rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.agenda-nav .active {
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.agenda-range-label {
+    min-height: 20px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
 .summary-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -262,6 +291,24 @@ h3 {
     gap: 10px;
 }
 
+.day-divider {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 4px;
+    color: var(--primary-dark);
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.day-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+}
+
 .appointment-card,
 .remark-card {
     display: grid;
@@ -275,10 +322,12 @@ h3 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
 .card-time {
+    min-width: 0;
     color: var(--primary-dark);
     font-weight: 900;
 }
@@ -464,6 +513,11 @@ h3 {
     .filter-panel {
         grid-template-columns: 1fr 1fr auto;
         align-items: end;
+    }
+
+    .agenda-nav,
+    .agenda-range-label {
+        grid-column: 1 / -1;
     }
 
     .sheet-panel {

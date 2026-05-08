@@ -22,6 +22,8 @@
         remarks: [],
         selectedAppointment: null,
         canAuthorizeRemarks: false,
+        agendaMode: "day",
+        agendaRange: null,
         apiBase: getInitialApiBase(),
         authHeader: sessionStorage.getItem("mobileAuthHeader") || ""
     };
@@ -46,7 +48,8 @@
         [
             "loginView", "appView", "loginForm", "loginMessage", "usernameInput", "passwordInput",
             "logoutButton", "userSummary", "agendaDateInput", "professionalFilter",
-            "refreshAgendaButton", "agendaSummary", "agendaList", "remarkStatusFilter",
+            "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
+            "nextDayButton", "agendaRangeLabel", "agendaSummary", "agendaList", "remarkStatusFilter",
             "refreshRemarksButton", "remarkList", "agendaTab", "remarquesTab",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
@@ -63,7 +66,14 @@
         els.logoutButton.addEventListener("click", handleLogout);
         els.refreshAgendaButton.addEventListener("click", () => loadAgenda({ force: true }));
         els.refreshRemarksButton.addEventListener("click", () => loadRemarks({ force: true }));
-        els.agendaDateInput.addEventListener("change", () => loadAgenda({ force: true }));
+        els.previousDayButton.addEventListener("click", () => moveAgendaDay(-1));
+        els.todayAgendaButton.addEventListener("click", showTodayAgenda);
+        els.weekAgendaButton.addEventListener("click", showCurrentWeekAgenda);
+        els.nextDayButton.addEventListener("click", () => moveAgendaDay(1));
+        els.agendaDateInput.addEventListener("change", () => {
+            state.agendaMode = "day";
+            loadAgenda({ force: true });
+        });
         els.professionalFilter.addEventListener("change", () => loadAgenda({ force: true }));
         els.remarkStatusFilter.addEventListener("change", renderRemarks);
         els.remarkForm.addEventListener("submit", handleRemarkSubmit);
@@ -351,11 +361,12 @@
     }
 
     async function loadAgenda(options = {}) {
-        const date = els.agendaDateInput.value || toDateInputValue(new Date());
+        const date = getSelectedAgendaDateValue();
+        state.agendaRange = getAgendaRange(date);
         const params = new URLSearchParams({
-            start_date: date,
-            end_date: date,
-            limit: "500"
+            start_date: state.agendaRange.start,
+            end_date: state.agendaRange.end,
+            limit: state.agendaMode === "week" ? "2000" : "500"
         });
         if (options.force) {
             params.set("force", "1");
@@ -374,15 +385,18 @@
         } catch (err) {
             els.agendaList.innerHTML = `<div class="empty-state">${escapeHtml(err.message || "Nao foi possivel carregar a agenda.")}</div>`;
             els.agendaSummary.innerHTML = "";
+            updateAgendaModeUi();
         }
     }
 
     function renderAgendaLoading() {
+        updateAgendaModeUi();
         els.agendaSummary.innerHTML = "";
         els.agendaList.innerHTML = '<div class="empty-state">Carregando agenda...</div>';
     }
 
     function renderAgenda() {
+        updateAgendaModeUi();
         const activeCount = state.appointments.filter((apt) => !["finalizado", "faltou", "cancelado_paciente", "cancelado_profissional"].includes(apt.status)).length;
         const finishedCount = state.appointments.filter((apt) => apt.status === "finalizado").length;
         els.agendaSummary.innerHTML = [
@@ -392,18 +406,27 @@
         ].join("");
 
         if (!state.appointments.length) {
-            els.agendaList.innerHTML = '<div class="empty-state">Nenhum atendimento para esta data.</div>';
+            els.agendaList.innerHTML = `<div class="empty-state">${state.agendaMode === "week" ? "Nenhum atendimento nesta semana." : "Nenhum atendimento para esta data."}</div>`;
             return;
         }
 
         els.agendaList.innerHTML = "";
+        let currentDate = "";
         state.appointments.forEach((appointment) => {
+            if (state.agendaMode === "week" && appointment.date !== currentDate) {
+                currentDate = appointment.date;
+                const divider = document.createElement("div");
+                divider.className = "day-divider";
+                divider.textContent = formatWeekdayDate(currentDate);
+                els.agendaList.appendChild(divider);
+            }
+
             const card = document.createElement("button");
             card.type = "button";
             card.className = "appointment-card";
             card.innerHTML = `
                 <div class="card-topline">
-                    <span class="card-time">${escapeHtml(formatAppointmentTime(appointment))}</span>
+                    <span class="card-time">${escapeHtml(formatAgendaCardTime(appointment))}</span>
                     <span class="status-pill status-${escapeHtml(appointment.status)}">${escapeHtml(getStatusLabel(appointment.status))}</span>
                 </div>
                 <p class="card-title">${escapeHtml(appointment.patientName || "Paciente")}</p>
@@ -413,6 +436,60 @@
             card.addEventListener("click", () => openAppointmentSheet(appointment));
             els.agendaList.appendChild(card);
         });
+    }
+
+    function getSelectedAgendaDateValue() {
+        const date = els.agendaDateInput.value || toDateInputValue(new Date());
+        els.agendaDateInput.value = date;
+        return date;
+    }
+
+    function moveAgendaDay(delta) {
+        const next = addDays(parseDateInput(getSelectedAgendaDateValue()), delta);
+        state.agendaMode = "day";
+        els.agendaDateInput.value = toDateInputValue(next);
+        loadAgenda({ force: true });
+    }
+
+    function showTodayAgenda() {
+        state.agendaMode = "day";
+        els.agendaDateInput.value = toDateInputValue(new Date());
+        loadAgenda({ force: true });
+    }
+
+    function showCurrentWeekAgenda() {
+        state.agendaMode = "week";
+        els.agendaDateInput.value = toDateInputValue(new Date());
+        loadAgenda({ force: true });
+    }
+
+    function getAgendaRange(dateValue) {
+        if (state.agendaMode !== "week") {
+            return {
+                start: dateValue,
+                end: dateValue,
+                label: `Dia ${formatDateBR(dateValue)}`
+            };
+        }
+        const start = startOfWeek(parseDateInput(dateValue));
+        const end = addDays(start, 6);
+        const startValue = toDateInputValue(start);
+        const endValue = toDateInputValue(end);
+        return {
+            start: startValue,
+            end: endValue,
+            label: `Semana atual: ${formatDateBR(startValue)} a ${formatDateBR(endValue)}`
+        };
+    }
+
+    function updateAgendaModeUi() {
+        const range = state.agendaRange || getAgendaRange(getSelectedAgendaDateValue());
+        els.agendaRangeLabel.textContent = range.label;
+        const today = toDateInputValue(new Date());
+        const isToday = state.agendaMode === "day" && els.agendaDateInput.value === today;
+        els.todayAgendaButton.classList.toggle("active", isToday);
+        els.weekAgendaButton.classList.toggle("active", state.agendaMode === "week");
+        els.weekAgendaButton.setAttribute("aria-pressed", state.agendaMode === "week" ? "true" : "false");
     }
 
     async function loadRemarks(options = {}) {
@@ -768,6 +845,12 @@
         return end ? `${start} - ${end}` : start;
     }
 
+    function formatAgendaCardTime(appointment) {
+        const time = formatAppointmentTime(appointment);
+        if (state.agendaMode !== "week") return time;
+        return `${getWeekdayShort(appointment.date)} ${formatDateShortBR(appointment.date)} - ${time}`;
+    }
+
     function formatTime(value) {
         return normalizeTime(value);
     }
@@ -780,11 +863,48 @@
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
 
+    function formatDateShortBR(value) {
+        const date = normalizeDate(value);
+        if (!date) return "";
+        const parts = date.split("-");
+        if (parts.length !== 3) return date;
+        return `${parts[2]}/${parts[1]}`;
+    }
+
+    function formatWeekdayDate(value) {
+        return `${getWeekdayShort(value)}, ${formatDateBR(value)}`;
+    }
+
+    function getWeekdayShort(value) {
+        const labels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+        return labels[parseDateInput(value).getDay()] || "";
+    }
+
     function toDateInputValue(date) {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, "0");
         const day = String(date.getDate()).padStart(2, "0");
         return `${year}-${month}-${day}`;
+    }
+
+    function parseDateInput(value) {
+        const parts = String(value || "").split("-").map(Number);
+        if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+            return new Date();
+        }
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    function addDays(date, amount) {
+        const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        next.setDate(next.getDate() + amount);
+        return next;
+    }
+
+    function startOfWeek(date) {
+        const day = date.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        return addDays(date, diff);
     }
 
     function suggestEndTime(start) {

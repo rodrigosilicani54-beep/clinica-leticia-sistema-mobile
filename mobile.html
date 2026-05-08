@@ -61,6 +61,13 @@
                         </select>
                     </label>
                     <button id="refreshAgendaButton" class="secondary-button" type="button">Atualizar</button>
+                    <div class="agenda-nav" aria-label="Navegacao da agenda">
+                        <button id="previousDayButton" class="nav-button" type="button" aria-label="Dia anterior">&lsaquo;</button>
+                        <button id="todayAgendaButton" class="secondary-button" type="button">Hoje</button>
+                        <button id="weekAgendaButton" class="secondary-button" type="button" aria-pressed="false">Semana</button>
+                        <button id="nextDayButton" class="nav-button" type="button" aria-label="Proximo dia">&rsaquo;</button>
+                    </div>
+                    <p id="agendaRangeLabel" class="agenda-range-label" aria-live="polite"></p>
                 </div>
 
                 <div id="agendaSummary" class="summary-row"></div>
