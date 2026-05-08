@@ -1204,7 +1204,7 @@
 
         // Fetch users from backend and merge into local users cache
         function fetchUsersFromServer() {
-            fetch('http://127.0.0.1:5000/api/usuarios')
+            fetch(apiUrl('/api/usuarios'))
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.success && Array.isArray(data.users)) {
@@ -2695,7 +2695,7 @@
 
             const localPatients = JSON.parse(localStorage.getItem('patients') || '[]');
 
-            fetch('http://127.0.0.1:5000/api/pacientes')
+            fetch(apiUrl('/api/pacientes'))
                         .then(res => res.json())
                 .then(data => {
                     const patients = (data && data.success && Array.isArray(data.pacientes)) ? data.pacientes : localPatients;
@@ -3372,7 +3372,7 @@
         // Fetch professionals from server and merge into local cache
         // Returns a Promise that resolves to an array of server professionals (raw server objects)
         function fetchProfessionalsFromServer(signal) {
-            return fetch('http://127.0.0.1:5000/api/profissionais', signal ? { signal } : undefined)
+            return fetch(apiUrl('/api/profissionais'), signal ? { signal } : undefined)
                 .then(res => res.json())
                 .then(data => {
                     const serverList = [];
@@ -3460,7 +3460,7 @@
         }
 
         function fetchRoomsFromServer() {
-            return fetch('http://127.0.0.1:5000/api/salas')
+            return fetch(apiUrl('/api/salas'))
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.success && Array.isArray(data.salas)) {
@@ -3673,8 +3673,8 @@
         function fetchAppointmentsFromServer(options = {}) {
             debugLog('[fetchAppointmentsFromServer] Starting sync from server...');
             const url = options.force
-                ? 'http://127.0.0.1:5000/api/agendamentos?force=1'
-                : 'http://127.0.0.1:5000/api/agendamentos';
+                ? apiUrl('/api/agendamentos?force=1')
+                : apiUrl('/api/agendamentos');
             return fetch(url)
                 .then(res => res.json())
                 .then(data => {
@@ -8956,7 +8956,7 @@
 
         async function fetchRemarkConfigFromServer() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/remarques/config', {
+                const response = await fetch(apiUrl('/api/remarques/config'), {
                     headers: getRemarkAuthHeaders()
                 });
                 const data = await response.json();
@@ -9070,8 +9070,8 @@
             remarkRequestsFetchPromise = (async () => {
             try {
                 const url = options.force
-                    ? 'http://127.0.0.1:5000/api/remarques?force=1'
-                    : 'http://127.0.0.1:5000/api/remarques';
+                    ? apiUrl('/api/remarques?force=1')
+                    : apiUrl('/api/remarques');
                 const response = await fetch(url, {
                     headers: getRemarkAuthHeaders()
                 });
