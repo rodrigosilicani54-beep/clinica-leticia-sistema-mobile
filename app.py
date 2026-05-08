@@ -4692,6 +4692,9 @@ def sync_state():
     if auth_check:
         return auth_check
 
+    def format_sync_timestamp(value):
+        return value.isoformat() if hasattr(value, 'isoformat') else value
+
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -4704,9 +4707,30 @@ def sync_state():
         cur.execute(f"SELECT COUNT(*), MAX({appointment_timestamp}) FROM agendamentos")
         appointment_count, appointment_max = cur.fetchone()
 
-        cur.execute("SELECT COUNT(*), MAX(criado_em) FROM profissionais")
+        professional_cols = get_table_columns_cached(cur, 'profissionais')
+        professional_timestamp = 'criado_em'
+        if 'atualizado_em' in professional_cols:
+            professional_timestamp = "GREATEST(COALESCE(atualizado_em, criado_em), criado_em)"
+        cur.execute(f"SELECT COUNT(*), MAX({professional_timestamp}) FROM profissionais")
         professional_count, professional_max = cur.fetchone()
 
+        ensure_app_config_table(cur)
+        cur.execute("SELECT COUNT(*), MAX(atualizado_em) FROM sistema_configuracoes")
+        config_count, config_max = cur.fetchone()
+
+        ensure_remarque_table_cached(cur)
+        cur.execute("""
+            SELECT COUNT(*),
+                   MAX(GREATEST(
+                       COALESCE(solicitado_em, '1970-01-01'::timestamp),
+                       COALESCE(autorizado_em, '1970-01-01'::timestamp),
+                       COALESCE(rejeitado_em, '1970-01-01'::timestamp)
+                   ))
+            FROM remarque_solicitacoes
+        """)
+        remarque_count, remarque_max = cur.fetchone()
+
+        conn.commit()
         cur.close()
         conn.close()
 
@@ -4714,11 +4738,19 @@ def sync_state():
             'success': True,
             'agendamentos': {
                 'count': appointment_count or 0,
-                'max_timestamp': appointment_max.isoformat() if hasattr(appointment_max, 'isoformat') else appointment_max
+                'max_timestamp': format_sync_timestamp(appointment_max)
             },
             'profissionais': {
                 'count': professional_count or 0,
-                'max_timestamp': professional_max.isoformat() if hasattr(professional_max, 'isoformat') else professional_max
+                'max_timestamp': format_sync_timestamp(professional_max)
+            },
+            'configuracoes': {
+                'count': config_count or 0,
+                'max_timestamp': format_sync_timestamp(config_max)
+            },
+            'remarques': {
+                'count': remarque_count or 0,
+                'max_timestamp': format_sync_timestamp(remarque_max)
             }
         })
     except Exception as e:

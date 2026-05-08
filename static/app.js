@@ -841,7 +841,9 @@
             if (!state || !state.success) return null;
             return {
                 agendamentos: state.agendamentos || {},
-                profissionais: state.profissionais || {}
+                profissionais: state.profissionais || {},
+                configuracoes: state.configuracoes || {},
+                remarques: state.remarques || {}
             };
         }
 
@@ -849,9 +851,56 @@
             return JSON.stringify(a || {}) === JSON.stringify(b || {});
         }
 
+        function isSyncSectionChanged(previousState, nextState, sectionName) {
+            return JSON.stringify((previousState && previousState[sectionName]) || {}) !== JSON.stringify((nextState && nextState[sectionName]) || {});
+        }
+
+        function hasAgendaSyncStateChanged(previousState, nextState) {
+            return isSyncSectionChanged(previousState, nextState, 'agendamentos')
+                || isSyncSectionChanged(previousState, nextState, 'profissionais');
+        }
+
+        function rerenderOpenAppointmentActions() {
+            const appointmentId = document.getElementById('appointmentId')?.value;
+            if (!appointmentId) return;
+            const openAppointment = getAppointmentById(appointmentId);
+            if (openAppointment) {
+                showAppointmentActionOptions(openAppointment, { skipRemarkConfigRefresh: true });
+            }
+        }
+
+        async function refreshLiveStateForServerChanges(previousState, nextState) {
+            if (!previousState || !nextState) return;
+
+            const configChanged = isSyncSectionChanged(previousState, nextState, 'configuracoes');
+            const remarquesChanged = isSyncSectionChanged(previousState, nextState, 'remarques');
+            if (!configChanged && !remarquesChanged) return;
+
+            const refreshTasks = [];
+            if (configChanged) {
+                refreshTasks.push(fetchRemarkConfigFromServer());
+            }
+            if (remarquesChanged) {
+                refreshTasks.push(fetchRemarkRequestsFromServer({ force: true }));
+            }
+
+            await Promise.allSettled(refreshTasks);
+            updateRemarkConfigUi();
+            updateRemarkBadges();
+
+            if (configChanged) {
+                rerenderOpenAppointmentActions();
+            }
+
+            const requestsModal = document.getElementById('remarkRequestsModal');
+            if (remarquesChanged && requestsModal && requestsModal.classList.contains('active')) {
+                renderRemarkRequestsList();
+            }
+        }
+
         async function fetchServerSyncState() {
             try {
-                const response = await fetch('/api/sync-state');
+                const response = await fetch(apiUrl('/api/sync-state'), { cache: 'no-store' });
                 return normalizeServerSyncState(await response.json());
             } catch (err) {
                 console.warn('[checkServerUpdates] Estado leve indisponivel, usando verificacao completa:', err);
@@ -868,17 +917,24 @@
             try {
                 const now = Date.now();
                 const shouldRunFullCheck = !lastFullServerCheckAt || (now - lastFullServerCheckAt) >= FULL_REFRESH_CHECK_INTERVAL_MS;
+                const previousServerState = lastServerSyncState;
                 const serverState = await fetchServerSyncState();
-                if (serverState && !shouldRunFullCheck && lastServerSyncState && areSyncStatesEqual(serverState, lastServerSyncState)) {
+                if (serverState) {
+                    await refreshLiveStateForServerChanges(previousServerState, serverState);
+                }
+                if (serverState && !shouldRunFullCheck && previousServerState && areSyncStatesEqual(serverState, previousServerState)) {
                     return;
                 }
                 if (serverState) {
                     lastServerSyncState = serverState;
                 }
+                if (serverState && !shouldRunFullCheck && previousServerState && !hasAgendaSyncStateChanged(previousServerState, serverState)) {
+                    return;
+                }
 
                 const [profRes, aptRes] = await Promise.all([
-                    fetch('/api/profissionais'),
-                    fetch('/api/agendamentos?force=1')
+                    fetch(apiUrl('/api/profissionais')),
+                    fetch(apiUrl('/api/agendamentos?force=1'))
                 ]);
                 lastFullServerCheckAt = now;
 
