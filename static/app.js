@@ -22,6 +22,14 @@
             return `${LOCAL_API_BASE}${normalizedPath}`;
         }
 
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = function(input, init) {
+            if (typeof input === 'string' && input.startsWith(`${LOCAL_API_BASE}/api/`)) {
+                return nativeFetch(apiUrl(input.slice(LOCAL_API_BASE.length)), init);
+            }
+            return nativeFetch(input, init);
+        };
+
         professionals = professionals.map(prof => ({
             ...prof,
             id: String(prof.id || '').trim()
