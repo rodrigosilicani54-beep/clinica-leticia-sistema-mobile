@@ -2753,9 +2753,10 @@
             const tempId = Date.now().toString();
             const localPatient = { id: tempId, ...patient };
 
-            fetch('http://127.0.0.1:5000/api/pacientes', {
+            fetch(apiUrl('/api/pacientes'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
                 body: JSON.stringify(patient)
             })
             .then(res => res.json())
@@ -2825,8 +2826,15 @@
             }
 
             try {
-                const response = await fetch(apiUrl('/api/pacientes'), { cache: 'no-store' });
+                const response = await fetch(apiUrl('/api/pacientes'), {
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
                 const data = await response.json();
+                if (!response.ok || !data || !data.success) {
+                    throw new Error(data?.error || 'Nao foi possivel carregar pacientes');
+                }
                 const patients = (data && data.success && Array.isArray(data.pacientes)) ? data.pacientes : localPatients;
                 patientListCache = patients.length ? patients : localPatients;
                 localStorage.setItem('patients', JSON.stringify(patientListCache));
@@ -12618,15 +12626,14 @@ async function salvarPaciente() {
         convenio: convenio
     };
 
-    const endpoint = editingPatientId ? `http://127.0.0.1:5000/api/pacientes/${editingPatientId}` : "http://127.0.0.1:5000/api/pacientes";
+    const endpoint = editingPatientId ? apiUrl(`/api/pacientes/${editingPatientId}`) : apiUrl('/api/pacientes');
     const method = editingPatientId ? 'PUT' : 'POST';
 
     try {
         const res = await fetch(endpoint, {
             method,
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: getAuthenticatedHeaders(true),
+            credentials: 'same-origin',
             body: JSON.stringify(payload)
         });
 
@@ -12662,11 +12669,10 @@ async function togglePatientStatus(patientId, activate) {
     }
 
     try {
-        const res = await fetch(`http://127.0.0.1:5000/api/pacientes/${patientId}`, {
+        const res = await fetch(apiUrl(`/api/pacientes/${patientId}`), {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthenticatedHeaders(true),
+            credentials: 'same-origin',
             body: JSON.stringify({ ativo: activate })
         });
         const data = await res.json();
@@ -12695,8 +12701,10 @@ async function deletePatient(patientId) {
     }
 
     try {
-        const res = await fetch(`http://127.0.0.1:5000/api/pacientes/${patientId}`, {
-            method: 'DELETE'
+        const res = await fetch(apiUrl(`/api/pacientes/${patientId}`), {
+            method: 'DELETE',
+            headers: getAuthenticatedHeaders(false),
+            credentials: 'same-origin'
         });
         const data = await res.json();
         if (data.success) {

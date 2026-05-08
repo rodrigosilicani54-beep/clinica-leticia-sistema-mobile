@@ -1463,6 +1463,14 @@ def user_can_manage_waitlist(cur, user):
     )
 
 
+def user_can_view_patients(cur, user):
+    if not user:
+        return False
+    if normalize_level(user.get('level')) in ('admin', 'editor'):
+        return True
+    return user_can_manage_waitlist(cur, user)
+
+
 def serialize_waitlist_item(row, keys):
     item = dict(zip(keys, row))
     if item.get('paciente_nome_cadastro'):
@@ -2666,14 +2674,19 @@ def criar_paciente():
 
 @app.route('/api/pacientes', methods=['GET'])
 def listar_pacientes():
-    auth_check = require_editor_or_admin()
-    if auth_check:
-        return auth_check
+    authenticated_user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
 
     try:
         conn = get_connection()
         cur = conn.cursor()
-        ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
+        if not user_can_view_patients(cur, authenticated_user):
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Sem permissao para consultar pacientes'}), 403
+
+        patient_cols = ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
         conn.commit()
 
         select_fields = ['id', 'nome', 'data_nascimento', 'endereco', 'nome_mae', 'nome_pai', 'convenio', 'telefone']
