@@ -526,6 +526,15 @@
             currentUser = null;
             userPermissions = null;
             localStorage.removeItem('currentUser');
+            const userInfo = document.querySelector('.user-info');
+            if (userInfo) {
+                userInfo.remove();
+            }
+            document.querySelectorAll('.modal').forEach(modal => {
+                if (modal.id !== 'loginModal') {
+                    modal.classList.remove('active');
+                }
+            });
             document.getElementById('loginModal').classList.add('active');
         }
 
@@ -1000,6 +1009,23 @@
         function updateUIBasedOnPermissions() {
             // Get all action buttons
             const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                const buttonText = button.textContent.toLowerCase();
+                const isPermissionControlled =
+                    buttonText.includes('cadastrar') ||
+                    buttonText.includes('agendar') ||
+                    buttonText.includes('excel') ||
+                    buttonText.includes('ediÃ§Ã£o em lote') ||
+                    buttonText.includes('profissionais') ||
+                    buttonText.includes('pacientes') ||
+                    buttonText.includes('gerenciar usuÃ¡rios') ||
+                    button.id === 'btnCreateProfessional' ||
+                    button.id === 'btnCreatePatient' ||
+                    button.id === 'btnBulkCancelAppointments';
+                if (isPermissionControlled) {
+                    button.style.display = '';
+                }
+            });
             
             buttons.forEach(button => {
                 const buttonText = button.textContent.toLowerCase();
