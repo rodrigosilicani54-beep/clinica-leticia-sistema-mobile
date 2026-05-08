@@ -899,8 +899,13 @@
             await fetchProfessionalsFromServer();
             await fetchRoomsFromServer();
             await fetchAppointmentsFromServer({ force: true });
+            await fetchRemarkConfigFromServer();
+            await fetchRemarkRequestsFromServer({ force: true });
             lastServerSyncState = await fetchServerSyncState();
             lastFullServerCheckAt = Date.now();
+            updateRemarkConfigUi();
+            updateRemarkBadges();
+            refreshActiveScheduleViews();
             hideLoading();
             showSuccessMessage('✅ A agenda foi atualizada com os dados mais recentes do servidor.');
         }
@@ -8964,8 +8969,9 @@
 
         async function fetchRemarkConfigFromServer() {
             try {
-                const response = await fetch(apiUrl('/api/remarques/config'), {
-                    headers: getRemarkAuthHeaders()
+                const response = await fetch(apiUrl(`/api/remarques/config?_=${Date.now()}`), {
+                    headers: getRemarkAuthHeaders(),
+                    cache: 'no-store'
                 });
                 const data = await response.json();
                 if (data && data.success) {
@@ -9081,7 +9087,8 @@
                     ? apiUrl('/api/remarques?force=1')
                     : apiUrl('/api/remarques');
                 const response = await fetch(url, {
-                    headers: getRemarkAuthHeaders()
+                    headers: getRemarkAuthHeaders(),
+                    cache: 'no-store'
                 });
                 const data = await response.json();
                 if (data && data.success && Array.isArray(data.remarques)) {

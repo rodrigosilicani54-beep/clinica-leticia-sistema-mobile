@@ -1240,10 +1240,11 @@ def ensure_app_config_table(cur):
         APP_CONFIG_SCHEMA_READY = True
 
 
-def get_app_config_value(cur, key, default_value=None):
-    cached = get_ttl_cache(APP_CONFIG_CACHE, APP_CONFIG_CACHE_LOCK, key, APP_CONFIG_CACHE_TTL_SECONDS)
-    if cached is not None:
-        return cached
+def get_app_config_value(cur, key, default_value=None, use_cache=True):
+    if use_cache:
+        cached = get_ttl_cache(APP_CONFIG_CACHE, APP_CONFIG_CACHE_LOCK, key, APP_CONFIG_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
     ensure_app_config_table(cur)
     cur.execute("SELECT valor FROM sistema_configuracoes WHERE chave = %s LIMIT 1", (key,))
     row = cur.fetchone()
@@ -1277,7 +1278,7 @@ def parse_bool_config(value, default=True):
 
 
 def get_remarque_requests_enabled(cur):
-    return parse_bool_config(get_app_config_value(cur, 'remarque_solicitacoes_ativas', 'true'), True)
+    return parse_bool_config(get_app_config_value(cur, 'remarque_solicitacoes_ativas', 'true', use_cache=False), True)
 
 
 def ensure_professional_extra_columns(cur, professional_cols):
@@ -5453,6 +5454,14 @@ def listar_remarques():
         if not force_refresh:
             cached_payload = get_remarque_list_cache(cache_key)
             if cached_payload is not None:
+                conn = get_connection()
+                cur = conn.cursor()
+                ensure_app_config_table(cur)
+                cached_payload['can_authorize'] = user_can_authorize_remarque(cur, authenticated_user)
+                cached_payload['can_manage_config'] = user_can_manage_remarque_config(cur, authenticated_user)
+                cached_payload['requests_enabled'] = get_remarque_requests_enabled(cur)
+                cur.close()
+                conn.close()
                 return jsonify(cached_payload)
 
         conn = get_connection()
