@@ -7417,12 +7417,124 @@
         // Export/Import Functions
         let selectedFile = null;
 
+        function getSystemAppointmentTypeOptions() {
+            const select = document.getElementById('appointmentType');
+            const fromSelect = select
+                ? Array.from(select.options)
+                    .map(option => ({ value: option.value, label: option.textContent.trim() }))
+                    .filter(option => option.value)
+                : [];
+            const seen = new Set();
+            const options = [];
+
+            fromSelect.forEach(option => {
+                const value = String(option.value || '').trim();
+                if (!value || seen.has(value)) return;
+                seen.add(value);
+                options.push({ value, label: option.label || value });
+            });
+
+            appointments.forEach(appointment => {
+                const value = String(appointment.type || appointment.tipo_atendimento || '').trim();
+                if (!value || seen.has(value)) return;
+                seen.add(value);
+                options.push({ value, label: getTypeLabel(value) || value });
+            });
+
+            return options;
+        }
+
+        function populateReportTypeFilters(reset = false) {
+            const container = document.getElementById('reportTypeFilters');
+            if (!container) return;
+
+            const previousSelection = new Set(
+                Array.from(container.querySelectorAll('.report-type-filter:checked')).map(input => input.value)
+            );
+            const options = getSystemAppointmentTypeOptions();
+            container.innerHTML = '';
+
+            if (!options.length) {
+                const empty = document.createElement('div');
+                empty.className = 'text-blue-700';
+                empty.textContent = 'Nenhum tipo de atendimento cadastrado.';
+                container.appendChild(empty);
+                return;
+            }
+
+            options.forEach(option => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center gap-2';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = option.value;
+                checkbox.className = 'report-type-filter rounded border-blue-300 text-blue-600 focus:ring-blue-500';
+                checkbox.checked = reset || !previousSelection.size || previousSelection.has(option.value);
+
+                const text = document.createElement('span');
+                text.textContent = option.label;
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+                container.appendChild(label);
+            });
+        }
+
+        function setAllReportTypes(checked) {
+            document.querySelectorAll('.report-type-filter').forEach(input => {
+                input.checked = checked;
+            });
+        }
+
+        function populateReportProfessionalFilter(reset = false) {
+            const select = document.getElementById('reportProfessionalFilter');
+            if (!select) return;
+
+            const previousValue = reset ? '' : select.value;
+            select.innerHTML = '<option value="">Todos os profissionais</option>';
+
+            professionals
+                .filter(prof => prof && prof.active !== false)
+                .slice()
+                .sort((a, b) => (a.name || a.nome || '').localeCompare(b.name || b.nome || '', 'pt-BR'))
+                .forEach(prof => {
+                    const id = String(prof.id || '').trim();
+                    const name = prof.name || prof.nome || '';
+                    if (!id || !name) return;
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = name;
+                    select.appendChild(option);
+                });
+
+            select.value = previousValue;
+        }
+
+        function populateReportFilters(reset = false) {
+            populateReportProfessionalFilter(reset);
+            populateReportTypeFilters(reset);
+
+            const includeSessions = document.getElementById('reportIncludeSessions');
+            if (includeSessions && reset) {
+                includeSessions.checked = false;
+            }
+        }
+
+        function getSelectedReportTypes() {
+            return Array.from(document.querySelectorAll('.report-type-filter:checked')).map(input => input.value);
+        }
+
         function openExportModal() {
             if (!checkPermission('export')) {
                 showPermissionDenied('export');
                 return;
             }
+            populateReportFilters(true);
             document.getElementById('exportModal').classList.add('active');
+            fetchProfessionalsFromServer()
+                .then(() => populateReportProfessionalFilter(false))
+                .catch(() => null);
         }
 
         function exportScheduleFromModal() {
@@ -7490,8 +7602,14 @@
 
             const startDate = document.getElementById('reportStartDate').value;
             const endDate = document.getElementById('reportEndDate').value;
-            const includeType = document.getElementById('reportIncludeType')?.checked !== false;
-            const includeSessions = document.getElementById('reportIncludeSessions')?.checked !== false;
+            const includeSessions = document.getElementById('reportIncludeSessions')?.checked === true;
+            const professionalId = document.getElementById('reportProfessionalFilter')?.value || '';
+            const allReportTypes = getSystemAppointmentTypeOptions().map(option => option.value);
+            const selectedReportTypes = getSelectedReportTypes();
+            if (allReportTypes.length && selectedReportTypes.length === 0) {
+                alert('Selecione pelo menos um tipo de atendimento para exportar o relatorio.');
+                return;
+            }
 
             if (!startDate || !endDate) {
                 alert('Selecione a data inicial e final do relatório antes de exportar.');
@@ -7500,25 +7618,29 @@
 
             showLoading('Exportando Relatório', 'Gerando arquivo Excel...');
 
-            const headers = {};
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
+            const headers = getAuthenticatedHeaders(false);
 
             const params = new URLSearchParams({
                 start_date: startDate,
                 end_date: endDate,
-                include_type: includeType ? 'true' : 'false',
+                include_type: 'true',
                 include_sessions: includeSessions ? 'true' : 'false',
                 use_api: 'true',
                 user: (currentUser && currentUser.username) || 'usuario'
             });
+            if (professionalId) {
+                params.set('professional_id', professionalId);
+            }
+            if (selectedReportTypes.length < allReportTypes.length) {
+                selectedReportTypes.forEach(type => params.append('type', type));
+            }
 
-            const queryUrl = `http://127.0.0.1:5000/api/relatorio/agendamentos?${params.toString()}`;
+            const queryUrl = apiUrl(`/api/relatorio/agendamentos?${params.toString()}`);
 
             fetch(queryUrl, {
                 method: 'GET',
-                headers: headers
+                headers: headers,
+                credentials: 'same-origin'
             })
                 .then(async res => {
                     if (!res.ok) {

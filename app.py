@@ -6711,6 +6711,21 @@ def relatorio_agendamentos():
         end_date = normalize_date_for_db(request.args.get('end_date'))
         query_where = []
         params = []
+        professional_filter_id = normalize_optional_int(
+            request.args.get('professional_id') or request.args.get('profissional_id')
+        )
+        type_filters = []
+        for value in request.args.getlist('type') + request.args.getlist('tipo_atendimento') + request.args.getlist('tipo'):
+            text = str(value or '').strip()
+            if text:
+                type_filters.append(text)
+        raw_types = request.args.get('types') or request.args.get('tipos')
+        if raw_types:
+            for value in str(raw_types).split(','):
+                text = value.strip()
+                if text:
+                    type_filters.append(text)
+        type_filters = list(dict.fromkeys(type_filters))
 
         if start_date:
             query_where.append("a.data::date >= %s")
@@ -6718,6 +6733,21 @@ def relatorio_agendamentos():
         if end_date:
             query_where.append("a.data::date <= %s")
             params.append(end_date)
+        if professional_filter_id is not None:
+            if 'profissional_id' in appointment_cols:
+                query_where.append("(a.profissional_id = %s OR (a.profissional_id IS NULL AND a.profissional::text = %s))")
+                params.extend([professional_filter_id, str(professional_filter_id)])
+            else:
+                query_where.append("a.profissional::text = %s")
+                params.append(str(professional_filter_id))
+        if type_filters:
+            placeholders = ', '.join(['%s'] * len(type_filters))
+            query_where.append(f"a.tipo_atendimento IN ({placeholders})")
+            params.extend(type_filters)
+
+        professional_join = "LEFT JOIN profissionais p_prof ON a.profissional::text = p_prof.id::text"
+        if 'profissional_id' in appointment_cols:
+            professional_join = "LEFT JOIN profissionais p_prof ON (a.profissional_id = p_prof.id OR (a.profissional_id IS NULL AND a.profissional::text = p_prof.id::text))"
 
         query = f"""
             SELECT {', '.join(select_fields)},
@@ -6726,7 +6756,7 @@ def relatorio_agendamentos():
                    {professional_field}
             FROM agendamentos a
             LEFT JOIN pacientes p ON (a.paciente::text = p.id::text OR a.paciente = p.nome)
-            LEFT JOIN profissionais p_prof ON a.profissional::text = p_prof.id::text
+            {professional_join}
             {('WHERE ' + ' AND '.join(query_where)) if query_where else ''}
             ORDER BY a.data, a.hora_inicio
         """

@@ -918,17 +918,28 @@
                         <input type="date" id="reportEndDate" class="mt-2 block w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" />
                     </label>
                 </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Profissional
+                        <select id="reportProfessionalFilter" class="mt-2 block w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos os profissionais</option>
+                        </select>
+                    </label>
+                    <label class="flex items-end gap-2 text-sm font-medium text-gray-700 pb-2">
+                        <input type="checkbox" id="reportIncludeSessions" class="rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                        <span>Incluir quantidade de sess&otilde;es</span>
+                    </label>
+                </div>
                 <div class="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
-                    <div class="text-sm font-semibold text-blue-900 mb-2">Campos do Relat&oacute;rio HPT</div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-blue-900">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="reportIncludeType" checked class="rounded border-blue-300 text-blue-600 focus:ring-blue-500">
-                            <span>Incluir tipo de atendimento</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="reportIncludeSessions" checked class="rounded border-blue-300 text-blue-600 focus:ring-blue-500">
-                            <span>Incluir quantidade de sess&otilde;es</span>
-                        </label>
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <div class="text-sm font-semibold text-blue-900">Tipos de atendimento</div>
+                        <div class="flex gap-2 text-xs">
+                            <button type="button" onclick="setAllReportTypes(true)" class="text-blue-700 hover:text-blue-900 font-medium">Marcar todos</button>
+                            <button type="button" onclick="setAllReportTypes(false)" class="text-blue-700 hover:text-blue-900 font-medium">Limpar</button>
+                        </div>
+                    </div>
+                    <div id="reportTypeFilters" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-blue-900">
+                        <!-- Tipos do sistema preenchidos via JS -->
                     </div>
                 </div>
                 <button onclick="exportScheduleFromModal()" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-medium">
@@ -2166,7 +2177,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260508-patient-list-fix"></script>
+    <script src="static/app.js?v=20260508-hpt-report-filters"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
