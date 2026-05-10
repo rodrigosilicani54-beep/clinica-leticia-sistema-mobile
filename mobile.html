@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Clinica Leticia Segretti Mobile</title>
-    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-basic-tools">
+    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-appointment-detail">
 </head>
 <body>
     <main class="mobile-shell">
@@ -111,24 +111,56 @@
             <div class="sheet-handle"></div>
             <div class="sheet-header">
                 <div>
-                    <p id="sheetTime" class="eyebrow"></p>
+                    <p id="sheetTime" class="eyebrow">Atendimento</p>
                     <h2 id="sheetPatient"></h2>
                     <p id="sheetMeta" class="muted-text"></p>
                 </div>
                 <button class="icon-button" type="button" data-close-sheet aria-label="Fechar">Fechar</button>
             </div>
 
-            <div id="sheetStatus" class="status-pill"></div>
-
-            <div class="action-grid">
-                <button class="secondary-button" type="button" data-status-action="chegou">Chegou</button>
-                <button class="secondary-button" type="button" data-status-action="em_atendimento">Em atendimento</button>
-                <button class="primary-button" type="button" data-status-action="finalizado">Finalizar</button>
-                <button class="danger-button" type="button" data-status-action="faltou">Faltou</button>
+            <div class="appointment-detail-card">
+                <div class="detail-status-row">
+                    <span class="detail-label">Status atual</span>
+                    <span id="sheetStatus" class="status-pill"></span>
+                </div>
+                <dl class="detail-list">
+                    <div>
+                        <dt>Data</dt>
+                        <dd id="sheetDate"></dd>
+                    </div>
+                    <div>
+                        <dt>Horario</dt>
+                        <dd id="sheetSchedule"></dd>
+                    </div>
+                    <div>
+                        <dt>Profissional</dt>
+                        <dd id="sheetProfessional"></dd>
+                    </div>
+                    <div>
+                        <dt>Tipo</dt>
+                        <dd id="sheetType"></dd>
+                    </div>
+                </dl>
             </div>
 
+            <section class="sheet-section">
+                <div class="section-heading">
+                    <h3>Ações rápidas</h3>
+                    <p class="muted-text">Atualize somente o andamento do atendimento.</p>
+                </div>
+                <div class="action-grid">
+                    <button class="secondary-button" type="button" data-status-action="chegou">Chegou</button>
+                    <button class="secondary-button" type="button" data-status-action="em_atendimento">Em atendimento</button>
+                    <button class="primary-button" type="button" data-status-action="finalizado">Finalizar</button>
+                    <button class="danger-button" type="button" data-status-action="faltou">Faltou</button>
+                </div>
+            </section>
+
             <form id="remarkForm" class="remark-form">
-                <h3>Solicitar remarque</h3>
+                <div class="section-heading">
+                    <h3>Solicitar remarque</h3>
+                    <p class="muted-text">Envie uma nova sugestão de data e horário para autorização.</p>
+                </div>
                 <div class="form-grid">
                     <label>
                         Nova data
@@ -189,6 +221,6 @@
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260510-mobile-config-clean"></script>
+    <script src="static/mobile.js?v=20260510-mobile-appointment-detail"></script>
 </body>
 </html>

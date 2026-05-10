@@ -53,6 +53,7 @@
             "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
             "refreshRemarksButton", "remarkList", "agendaTab", "remarquesTab",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
+            "sheetDate", "sheetSchedule", "sheetProfessional", "sheetType",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
             "remarkReasonInput", "sheetMessage", "apiConfigToggle", "appApiConfigButton",
             "apiConfigSheet", "apiConfigForm", "apiBaseInput", "saveApiBaseButton",
@@ -673,11 +674,17 @@
     function openAppointmentSheet(appointment) {
         state.selectedAppointment = appointment;
         setSheetMessage("");
-        els.sheetTime.textContent = `${formatDateBR(appointment.date)} - ${formatAppointmentTime(appointment)}`;
+        const professionalName = getProfessionalName(appointment.professionalId);
+        const appointmentType = appointment.type || "Atendimento";
+        els.sheetTime.textContent = "Atendimento";
         els.sheetPatient.textContent = appointment.patientName || "Paciente";
-        els.sheetMeta.textContent = `${getProfessionalName(appointment.professionalId)} - ${appointment.type || "Atendimento"}`;
+        els.sheetMeta.textContent = `${formatDateBR(appointment.date)} - ${formatAppointmentTime(appointment)}`;
         els.sheetStatus.textContent = getStatusLabel(appointment.status);
         els.sheetStatus.className = `status-pill status-${appointment.status}`;
+        els.sheetDate.textContent = formatWeekdayDate(appointment.date);
+        els.sheetSchedule.textContent = formatAppointmentTime(appointment);
+        els.sheetProfessional.textContent = professionalName;
+        els.sheetType.textContent = appointmentType;
         els.remarkDateInput.value = appointment.date || els.agendaDateInput.value || toDateInputValue(new Date());
         els.remarkStartInput.value = appointment.time || "";
         els.remarkEndInput.value = appointment.endTime || suggestEndTime(appointment.time);
