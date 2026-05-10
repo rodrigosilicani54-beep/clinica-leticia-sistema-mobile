@@ -1160,16 +1160,6 @@
             if (resetButton) {
                 resetButton.style.display = 'none';
             }
-            // Show/hide main "Limpar Tudo" button based on permission
-            const clearAllBtn = document.getElementById('clearAllButton');
-            if (clearAllBtn) {
-                if (userPermissions && userPermissions.canSystemReset) {
-                    clearAllBtn.style.display = 'inline-block';
-                } else {
-                    clearAllBtn.style.display = 'none';
-                }
-            }
-
             const remarkRequestsButton = document.getElementById('remarkRequestsButton');
             if (remarkRequestsButton) {
                 remarkRequestsButton.style.display = canAuthorizeRemarkRequests() ? 'inline-block' : 'none';
@@ -12388,84 +12378,7 @@
 
         // Clear All Data Function
         function clearAllData() {
-            // Enforce permission: only users with systemReset permission (admins) can perform this
-            if (!checkPermission('systemReset')) {
-                showPermissionDenied('systemReset');
-                return;
-            }
-            const confirmMessage = `🗑️ LIMPAR TODOS OS DADOS\n\nDeseja apagar tudo?\n\n⚠️ Esta ação irá remover:\n• Todos os profissionais cadastrados (${professionals.length})\n• Todos os agendamentos (${appointments.length})\n• Todas as configurações\n• Todos os dados importados\n\n⚠️ Esta ação não pode ser desfeita!\n\nTem certeza?`;
-            
-            if (confirm(confirmMessage)) {
-                // Clear all data
-                professionals = [];
-                appointments = [];
-                selectedProfessional = '';
-                currentWeek = new Date();
-                currentView = 'home';
-                
-                // Clear localStorage
-                localStorage.removeItem('professionals');
-                localStorage.removeItem('appointments');
-                
-                // Clear all analysis data
-                currentAbsenceAnalysis = null;
-                currentReplacementAnalysis = null;
-                selectedAbsenceReplacements = [];
-                selectedBulkAppointments = [];
-                filteredBulkAppointments = [];
-                conflictResolutions = [];
-                selectedResolutions = {};
-                importPreviewData = null;
-                selectedFile = null;
-                
-                // Clear all form inputs
-                const allInputs = document.querySelectorAll('input, select, textarea');
-                allInputs.forEach(input => {
-                    if (input.type === 'checkbox' || input.type === 'radio') {
-                        input.checked = false;
-                    } else {
-                        input.value = '';
-                    }
-                });
-                
-                // Close all modals
-                const allModals = document.querySelectorAll('.modal');
-                allModals.forEach(modal => {
-                    modal.classList.remove('active');
-                });
-                
-                // Clear all dynamic content
-                document.getElementById('scheduleGrid').innerHTML = '';
-                document.getElementById('weeklyScheduleGrid').innerHTML = '';
-                document.getElementById('professionalsList').innerHTML = '';
-                document.getElementById('reportsContent').innerHTML = '';
-                document.getElementById('bulkAppointmentsList').innerHTML = '';
-                
-                // Reset all filters
-                document.getElementById('professionalFilter').innerHTML = '<option value="">Todos os Profissionais</option>';
-                document.getElementById('weeklyProfessionalFilter').innerHTML = '<option value="">Todos os Profissionais</option>';
-                document.getElementById('appointmentProfessional').innerHTML = '<option value="">Selecione o profissional...</option>';
-                document.getElementById('mainProfessionalSearch').value = '';
-                document.getElementById('professionalSearch').value = '';
-                
-                // Hide selected professional info
-                document.getElementById('selectedProfessionalInfo').classList.add('hidden');
-                document.getElementById('weeklyEmptyState').classList.remove('hidden');
-                
-                // Reset bulk edit filters
-                clearBulkFilters();
-                
-                // Update UI
-                updateProfessionalFilter();
-                updateWeeklyProfessionalFilter();
-                refreshActiveScheduleViews();
-                
-                // Show success message
-                showSuccessMessage('🗑️ Todos os dados foram apagados com sucesso! Sistema limpo.');
-                
-                // Return to home view
-                showHomeView();
-            }
+            showErrorMessage('Recurso "Limpar Tudo" desativado por seguranca.');
         }
 
         // Close modals when clicking outside, but keep the login modal locked until successful login
