@@ -25,6 +25,7 @@
         agendaMode: "day",
         agendaRange: null,
         lastAgendaUpdatedAt: null,
+        lastRemarksUpdatedAt: null,
         apiBase: getInitialApiBase(),
         authHeader: sessionStorage.getItem("mobileAuthHeader") || ""
     };
@@ -51,11 +52,11 @@
             "logoutButton", "userSummary", "agendaDateInput", "professionalFilter",
             "agendaStatusFilter", "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
             "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
-            "refreshRemarksButton", "remarkList", "agendaTab", "remarquesTab",
+            "refreshRemarksButton", "remarkSummary", "remarkLastUpdated", "remarkList", "agendaTab", "remarquesTab",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "sheetDate", "sheetSchedule", "sheetProfessional", "sheetType",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
-            "remarkReasonInput", "sheetMessage", "apiConfigToggle", "appApiConfigButton",
+            "remarkReasonInput", "sheetRemarkNotice", "remarkSubmitButton", "sheetMessage", "apiConfigToggle", "appApiConfigButton",
             "apiConfigSheet", "apiConfigForm", "apiBaseInput", "saveApiBaseButton",
             "testApiBaseButton", "apiConfigMessage", "apiConfigSummary", "clearMobileCacheButton",
             "mobileCacheMessage"
@@ -626,14 +627,19 @@
                 ? data.remarques.map(normalizeRemark)
                 : [];
             state.canAuthorizeRemarks = !!data.can_authorize;
+            state.lastRemarksUpdatedAt = new Date();
             renderRemarks();
         } catch (err) {
+            els.remarkSummary.innerHTML = "";
+            updateRemarkLastUpdated();
             els.remarkList.innerHTML = `<div class="empty-state">${escapeHtml(err.message || "Nao foi possivel carregar remarques.")}</div>`;
         }
     }
 
     function renderRemarks() {
         const filter = els.remarkStatusFilter.value;
+        updateRemarkSummary();
+        updateRemarkLastUpdated();
         const remarks = state.remarks
             .filter((remark) => !filter || remark.status === filter)
             .sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
@@ -653,15 +659,18 @@
                     <button class="danger-button" type="button" data-remark-action="reject" data-remark-id="${escapeHtml(remark.id)}">Reprovar</button>
                 </div>`
                 : "";
+            const decisionLine = getRemarkDecisionLine(remark);
             card.innerHTML = `
                 <div class="card-topline">
-                    <span class="status-pill">${escapeHtml(getRemarkStatusLabel(remark.status))}</span>
+                    <span class="status-pill remark-status-${escapeHtml(remark.status)}">${escapeHtml(getRemarkStatusLabel(remark.status))}</span>
                     <span class="card-subtitle">${escapeHtml(formatDateBR(remark.requestedAt))}</span>
                 </div>
                 <p class="card-title">${escapeHtml(remark.patientName || `Agendamento ${remark.appointmentId}`)}</p>
                 <p class="card-subtitle">Atual: ${escapeHtml(formatDateBR(remark.originalDate))} ${escapeHtml(formatTime(remark.originalTime))} - ${escapeHtml(formatTime(remark.originalEndTime))}</p>
                 <p class="card-subtitle">Novo: ${escapeHtml(formatDateBR(remark.newDate))} ${escapeHtml(formatTime(remark.newTime))} - ${escapeHtml(formatTime(remark.newEndTime))}</p>
+                ${remark.requestedBy ? `<p class="card-subtitle">Solicitado por: ${escapeHtml(remark.requestedBy)}</p>` : ""}
                 ${remark.reason ? `<p class="card-subtitle">${escapeHtml(remark.reason)}</p>` : ""}
+                ${decisionLine ? `<p class="card-subtitle">${escapeHtml(decisionLine)}</p>` : ""}
                 ${actions}
             `;
             card.querySelectorAll("[data-remark-action]").forEach((button) => {
@@ -669,6 +678,38 @@
             });
             els.remarkList.appendChild(card);
         });
+    }
+
+    function updateRemarkSummary() {
+        if (!els.remarkSummary) return;
+        const pending = state.remarks.filter((remark) => remark.status === "pendente").length;
+        const approved = state.remarks.filter((remark) => remark.status === "aprovado").length;
+        const rejected = state.remarks.filter((remark) => remark.status === "reprovado").length;
+        els.remarkSummary.innerHTML = [
+            summaryItem(pending, "Pendentes"),
+            summaryItem(approved, "Aprovados"),
+            summaryItem(rejected, "Reprovados")
+        ].join("");
+    }
+
+    function updateRemarkLastUpdated() {
+        if (!els.remarkLastUpdated) return;
+        if (!state.lastRemarksUpdatedAt) {
+            els.remarkLastUpdated.textContent = "";
+            return;
+        }
+        els.remarkLastUpdated.textContent = `Atualizado às ${formatClockTime(state.lastRemarksUpdatedAt)}`;
+    }
+
+    function getRemarkDecisionLine(remark) {
+        if (remark.status === "aprovado" && remark.approvedBy) {
+            return `Aprovado por: ${remark.approvedBy}`;
+        }
+        if (remark.status === "reprovado") {
+            const base = remark.rejectedBy ? `Reprovado por: ${remark.rejectedBy}` : "Reprovado";
+            return remark.rejectionReason ? `${base} - ${remark.rejectionReason}` : base;
+        }
+        return "";
     }
 
     function openAppointmentSheet(appointment) {
@@ -689,6 +730,7 @@
         els.remarkStartInput.value = appointment.time || "";
         els.remarkEndInput.value = appointment.endTime || suggestEndTime(appointment.time);
         els.remarkReasonInput.value = "";
+        renderAppointmentRemarkNotice(appointment);
         updateStatusActionButtons(appointment);
         els.appointmentSheet.classList.remove("hidden");
     }
@@ -703,6 +745,25 @@
             const status = button.dataset.statusAction;
             button.disabled = !canUpdateAppointmentStatus(status, appointment) || appointment.status === status;
         });
+    }
+
+    function getPendingRemarkForAppointment(appointmentId) {
+        return state.remarks.find((remark) =>
+            String(remark.appointmentId) === String(appointmentId) &&
+            remark.status === "pendente"
+        );
+    }
+
+    function renderAppointmentRemarkNotice(appointment) {
+        const pendingRemark = appointment ? getPendingRemarkForAppointment(appointment.id) : null;
+        const hasPendingRemark = !!pendingRemark;
+        els.sheetRemarkNotice.classList.toggle("hidden", !hasPendingRemark);
+        els.remarkSubmitButton.disabled = hasPendingRemark;
+        if (hasPendingRemark) {
+            els.sheetRemarkNotice.textContent = `Ja existe uma solicitacao pendente para ${formatDateBR(pendingRemark.newDate)} ${formatTime(pendingRemark.newTime)} - ${formatTime(pendingRemark.newEndTime)}.`;
+        } else {
+            els.sheetRemarkNotice.textContent = "";
+        }
     }
 
     async function handleStatusUpdate(status, button) {
@@ -771,10 +832,12 @@
             setSheetMessage("Remarque enviado para aprovacao.", false, true);
             els.remarkReasonInput.value = "";
             await loadRemarks({ force: true });
+            renderAppointmentRemarkNotice(appointment);
         } catch (err) {
             setSheetMessage(err.message || "Nao foi possivel enviar remarque.", true);
         } finally {
             setBusy(els.remarkForm, false);
+            renderAppointmentRemarkNotice(appointment);
         }
     }
 
@@ -882,7 +945,12 @@
             reason: remark.reason || remark.observacao || "",
             status: String(remark.status || "pendente"),
             requestedAt: remark.requestedAt || remark.solicitado_em || "",
-            patientName: remark.patientName || remark.paciente_nome || ""
+            patientName: remark.patientName || remark.paciente_nome || "",
+            requestedBy: remark.requestedBy || remark.solicitado_por || "",
+            approvedBy: remark.approvedBy || remark.autorizado_por || "",
+            rejectedBy: remark.rejectedBy || remark.rejeitado_por || "",
+            rejectionReason: remark.rejectionReason || remark.motivo_reprovacao || "",
+            patientInsurance: remark.patientInsurance || remark.paciente_convenio || ""
         };
     }
 

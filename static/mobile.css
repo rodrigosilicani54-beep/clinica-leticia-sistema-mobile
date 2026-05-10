@@ -382,6 +382,26 @@ h3 {
     color: var(--accent);
 }
 
+.remark-status-aprovado {
+    background: #e8f8ef;
+    color: #146c43;
+}
+
+.remark-status-reprovado {
+    background: #fff1f0;
+    color: var(--danger);
+}
+
+.remark-notice {
+    border: 1px solid #f0d48a;
+    border-radius: 8px;
+    background: #fff8e5;
+    color: #7a5200;
+    padding: 10px 12px;
+    font-size: 0.86rem;
+    font-weight: 750;
+}
+
 .primary-button,
 .secondary-button,
 .danger-button,

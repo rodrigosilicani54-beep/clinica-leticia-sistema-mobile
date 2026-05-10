@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Clinica Leticia Segretti Mobile</title>
-    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-cancel-professional">
+    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-remark-polish">
 </head>
 <body>
     <main class="mobile-shell">
@@ -100,6 +100,8 @@
                     </label>
                     <button id="refreshRemarksButton" class="secondary-button" type="button">Atualizar</button>
                 </div>
+                <div id="remarkSummary" class="summary-row"></div>
+                <p id="remarkLastUpdated" class="agenda-last-updated" aria-live="polite"></p>
                 <div id="remarkList" class="stack-list" aria-live="polite"></div>
             </section>
         </section>
@@ -162,6 +164,7 @@
                     <h3>Solicitar remarque</h3>
                     <p class="muted-text">Envie uma nova sugestão de data e horário para autorização.</p>
                 </div>
+                <div id="sheetRemarkNotice" class="remark-notice hidden"></div>
                 <div class="form-grid">
                     <label>
                         Nova data
@@ -180,7 +183,7 @@
                     Observacao
                     <textarea id="remarkReasonInput" rows="3" placeholder="Motivo ou orientacao para aprovacao"></textarea>
                 </label>
-                <button class="secondary-button full-width" type="submit">Enviar remarque</button>
+                <button id="remarkSubmitButton" class="secondary-button full-width" type="submit">Enviar remarque</button>
                 <p id="sheetMessage" class="form-message" role="status"></p>
             </form>
         </div>
@@ -222,6 +225,6 @@
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260510-mobile-cancel-professional"></script>
+    <script src="static/mobile.js?v=20260510-mobile-remark-polish"></script>
 </body>
 </html>
