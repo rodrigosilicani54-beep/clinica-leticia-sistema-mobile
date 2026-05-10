@@ -261,6 +261,14 @@ h3 {
     font-weight: 800;
 }
 
+.agenda-last-updated {
+    min-height: 18px;
+    margin: -6px 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .summary-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -481,6 +489,14 @@ h3 {
     max-height: 76vh;
 }
 
+.settings-section {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+}
+
 .action-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -511,7 +527,7 @@ h3 {
     }
 
     .filter-panel {
-        grid-template-columns: 1fr 1fr auto;
+        grid-template-columns: 1fr 1fr 1fr auto;
         align-items: end;
     }
 

@@ -24,6 +24,7 @@
         canAuthorizeRemarks: false,
         agendaMode: "day",
         agendaRange: null,
+        lastAgendaUpdatedAt: null,
         apiBase: getInitialApiBase(),
         authHeader: sessionStorage.getItem("mobileAuthHeader") || ""
     };
@@ -48,14 +49,15 @@
         [
             "loginView", "appView", "loginForm", "loginMessage", "usernameInput", "passwordInput",
             "logoutButton", "userSummary", "agendaDateInput", "professionalFilter",
-            "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
-            "nextDayButton", "agendaRangeLabel", "agendaSummary", "agendaList", "remarkStatusFilter",
+            "agendaStatusFilter", "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
+            "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
             "refreshRemarksButton", "remarkList", "agendaTab", "remarquesTab",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
             "remarkReasonInput", "sheetMessage", "apiConfigToggle", "appApiConfigButton",
             "apiConfigSheet", "apiConfigForm", "apiBaseInput", "saveApiBaseButton",
-            "testApiBaseButton", "apiConfigMessage", "apiConfigSummary"
+            "testApiBaseButton", "apiConfigMessage", "apiConfigSummary", "clearMobileCacheButton",
+            "mobileCacheMessage"
         ].forEach((id) => {
             els[id] = document.getElementById(id);
         });
@@ -75,12 +77,14 @@
             loadAgenda({ force: true });
         });
         els.professionalFilter.addEventListener("change", () => loadAgenda({ force: true }));
+        els.agendaStatusFilter.addEventListener("change", renderAgenda);
         els.remarkStatusFilter.addEventListener("change", renderRemarks);
         els.remarkForm.addEventListener("submit", handleRemarkSubmit);
         els.apiConfigToggle.addEventListener("click", () => openApiConfig());
         els.appApiConfigButton.addEventListener("click", () => openApiConfig());
         els.apiConfigForm.addEventListener("submit", handleApiConfigSave);
         els.testApiBaseButton.addEventListener("click", handleApiConfigTest);
+        els.clearMobileCacheButton.addEventListener("click", clearMobileCache);
 
         document.querySelectorAll("[data-tab]").forEach((button) => {
             button.addEventListener("click", () => showTab(button.dataset.tab));
@@ -217,6 +221,64 @@
             state.apiBase = previousApiBase;
             setBusy(els.testApiBaseButton, false);
         }
+    }
+
+    async function clearMobileCache() {
+        const confirmed = window.confirm("Limpar cache deste celular?\n\nIsso nao apaga profissionais, pacientes ou agendamentos do sistema. Voce precisara entrar novamente.");
+        if (!confirmed) return;
+
+        setBusy(els.clearMobileCacheButton, true);
+        setMobileCacheMessage("Limpando cache...");
+        try {
+            await apiFetch("/api/cache/clear", { method: "POST" }).catch(() => null);
+            await apiFetch("/api/logout", { method: "POST", skipAuth: true }).catch(() => null);
+            await clearBrowserCacheStorage().catch(() => null);
+            expireVisibleCookies();
+
+            const savedApiBase = state.apiBase;
+            localStorage.clear();
+            sessionStorage.clear();
+            if (savedApiBase) {
+                localStorage.setItem("mobileApiBase", savedApiBase);
+            }
+
+            clearMobileAuth();
+            state.user = null;
+            state.professionals = [];
+            state.appointments = [];
+            state.remarks = [];
+            state.lastAgendaUpdatedAt = null;
+            setMobileCacheMessage("Cache limpo. Recarregando...", false, true);
+            setTimeout(reloadWithoutCache, 800);
+        } catch (err) {
+            setMobileCacheMessage(err.message || "Nao foi possivel limpar o cache.", true);
+            setBusy(els.clearMobileCacheButton, false);
+        }
+    }
+
+    async function clearBrowserCacheStorage() {
+        if ("caches" in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+        }
+        if ("serviceWorker" in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((registration) => registration.unregister()));
+        }
+    }
+
+    function expireVisibleCookies() {
+        document.cookie.split(";").forEach((cookie) => {
+            const name = cookie.split("=")[0].trim();
+            if (!name) return;
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+        });
+    }
+
+    function reloadWithoutCache() {
+        const url = new URL(window.location.href);
+        url.searchParams.set("_cache", String(Date.now()));
+        window.location.replace(url.toString());
     }
 
     function setDefaultDate() {
@@ -381,6 +443,7 @@
             state.appointments = Array.isArray(data.agendamentos)
                 ? data.agendamentos.map(normalizeAppointment).sort(compareAppointments)
                 : [];
+            state.lastAgendaUpdatedAt = new Date();
             renderAgenda();
         } catch (err) {
             els.agendaList.innerHTML = `<div class="empty-state">${escapeHtml(err.message || "Nao foi possivel carregar a agenda.")}</div>`;
@@ -397,22 +460,30 @@
 
     function renderAgenda() {
         updateAgendaModeUi();
-        const activeCount = state.appointments.filter((apt) => !["finalizado", "faltou", "cancelado_paciente", "cancelado_profissional"].includes(apt.status)).length;
-        const finishedCount = state.appointments.filter((apt) => apt.status === "finalizado").length;
+        updateAgendaLastUpdated();
+
+        const appointments = getFilteredAppointments();
+        const activeCount = appointments.filter((apt) => isOpenStatus(apt.status)).length;
+        const finishedCount = appointments.filter((apt) => apt.status === "finalizado").length;
         els.agendaSummary.innerHTML = [
-            summaryItem(state.appointments.length, "Total"),
+            summaryItem(appointments.length, "Total"),
             summaryItem(activeCount, "Em aberto"),
             summaryItem(finishedCount, "Finalizados")
         ].join("");
 
-        if (!state.appointments.length) {
-            els.agendaList.innerHTML = `<div class="empty-state">${state.agendaMode === "week" ? "Nenhum atendimento nesta semana." : "Nenhum atendimento para esta data."}</div>`;
+        if (!appointments.length) {
+            const hasStatusFilter = !!els.agendaStatusFilter.value;
+            els.agendaList.innerHTML = `<div class="empty-state">${
+                hasStatusFilter
+                    ? "Nenhum atendimento encontrado para este filtro."
+                    : (state.agendaMode === "week" ? "Nenhum atendimento nesta semana." : "Nenhum atendimento para esta data.")
+            }</div>`;
             return;
         }
 
         els.agendaList.innerHTML = "";
         let currentDate = "";
-        state.appointments.forEach((appointment) => {
+        appointments.forEach((appointment) => {
             if (state.agendaMode === "week" && appointment.date !== currentDate) {
                 currentDate = appointment.date;
                 const divider = document.createElement("div");
@@ -436,6 +507,33 @@
             card.addEventListener("click", () => openAppointmentSheet(appointment));
             els.agendaList.appendChild(card);
         });
+    }
+
+    function getFilteredAppointments() {
+        const statusFilter = els.agendaStatusFilter.value;
+        if (!statusFilter) {
+            return state.appointments;
+        }
+        if (statusFilter === "open") {
+            return state.appointments.filter((appointment) => isOpenStatus(appointment.status));
+        }
+        if (statusFilter === "cancelado") {
+            return state.appointments.filter((appointment) => ["cancelado_paciente", "cancelado_profissional"].includes(appointment.status));
+        }
+        return state.appointments.filter((appointment) => appointment.status === statusFilter);
+    }
+
+    function isOpenStatus(status) {
+        return !["finalizado", "faltou", "cancelado_paciente", "cancelado_profissional"].includes(normalizeStatus(status));
+    }
+
+    function updateAgendaLastUpdated() {
+        if (!els.agendaLastUpdated) return;
+        if (!state.lastAgendaUpdatedAt) {
+            els.agendaLastUpdated.textContent = "";
+            return;
+        }
+        els.agendaLastUpdated.textContent = `Atualizado às ${formatClockTime(state.lastAgendaUpdatedAt)}`;
     }
 
     function getSelectedAgendaDateValue() {
@@ -697,7 +795,12 @@
             init.headers["Content-Type"] = "application/json";
         }
 
-        const response = await fetch(buildApiUrl(path), init);
+        let response;
+        try {
+            response = await fetch(buildApiUrl(path), init);
+        } catch (err) {
+            throw new Error("Nao foi possivel conectar ao servidor. Verifique a internet ou abra Config.");
+        }
         let data = null;
         try {
             data = await response.json();
@@ -855,6 +958,13 @@
         return normalizeTime(value);
     }
 
+    function formatClockTime(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return "";
+        }
+        return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    }
+
     function formatDateBR(value) {
         const date = normalizeDate(value);
         if (!date) return "";
@@ -936,6 +1046,12 @@
         els.apiConfigMessage.textContent = message || "";
         els.apiConfigMessage.classList.toggle("error", !!isError);
         els.apiConfigMessage.classList.toggle("success", !!isSuccess);
+    }
+
+    function setMobileCacheMessage(message, isError, isSuccess) {
+        els.mobileCacheMessage.textContent = message || "";
+        els.mobileCacheMessage.classList.toggle("error", !!isError);
+        els.mobileCacheMessage.classList.toggle("success", !!isSuccess);
     }
 
     function setSheetMessage(message, isError, isSuccess) {

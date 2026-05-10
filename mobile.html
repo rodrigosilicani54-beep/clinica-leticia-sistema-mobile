@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Clinica Leticia Segretti Mobile</title>
-    <link rel="stylesheet" href="static/mobile.css?v=20260508-agenda-nav">
+    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-basic-tools">
 </head>
 <body>
     <main class="mobile-shell">
@@ -25,7 +25,7 @@
                     <input id="passwordInput" name="password" type="password" autocomplete="current-password" required>
                 </label>
                 <button class="primary-button" type="submit">Entrar</button>
-                <button id="apiConfigToggle" class="secondary-button" type="button">Conexao</button>
+                <button id="apiConfigToggle" class="secondary-button" type="button">Config</button>
                 <p id="loginMessage" class="form-message" role="status"></p>
             </form>
         </section>
@@ -38,7 +38,7 @@
                     <p id="userSummary" class="muted-text"></p>
                 </div>
                 <div class="header-actions">
-                    <button id="appApiConfigButton" class="icon-button" type="button" title="Conexao" aria-label="Conexao">API</button>
+                    <button id="appApiConfigButton" class="icon-button" type="button" title="Config" aria-label="Config">Config</button>
                     <button id="logoutButton" class="icon-button" type="button" title="Sair" aria-label="Sair">Sair</button>
                 </div>
             </header>
@@ -60,6 +60,18 @@
                             <option value="">Todos</option>
                         </select>
                     </label>
+                    <label>
+                        Status
+                        <select id="agendaStatusFilter">
+                            <option value="">Todos</option>
+                            <option value="open">Em aberto</option>
+                            <option value="chegou">Chegou</option>
+                            <option value="em_atendimento">Em atendimento</option>
+                            <option value="finalizado">Finalizado</option>
+                            <option value="faltou">Faltou</option>
+                            <option value="cancelado">Cancelados</option>
+                        </select>
+                    </label>
                     <button id="refreshAgendaButton" class="secondary-button" type="button">Atualizar</button>
                     <div class="agenda-nav" aria-label="Navegacao da agenda">
                         <button id="previousDayButton" class="nav-button" type="button" aria-label="Dia anterior">&lsaquo;</button>
@@ -68,6 +80,7 @@
                         <button id="nextDayButton" class="nav-button" type="button" aria-label="Proximo dia">&rsaquo;</button>
                     </div>
                     <p id="agendaRangeLabel" class="agenda-range-label" aria-live="polite"></p>
+                    <p id="agendaLastUpdated" class="agenda-last-updated" aria-live="polite"></p>
                 </div>
 
                 <div id="agendaSummary" class="summary-row"></div>
@@ -147,7 +160,7 @@
             <div class="sheet-header">
                 <div>
                     <p class="eyebrow">Mobile</p>
-                    <h2>Conexao</h2>
+                    <h2>Config</h2>
                     <p id="apiConfigSummary" class="muted-text"></p>
                 </div>
                 <button class="icon-button" type="button" data-close-api-config aria-label="Fechar">Fechar</button>
@@ -164,9 +177,18 @@
                 </div>
                 <p id="apiConfigMessage" class="form-message" role="status"></p>
             </form>
+
+            <div class="settings-section">
+                <div>
+                    <h3>Limpar cache</h3>
+                    <p class="muted-text">Remove dados temporarios deste celular e recarrega o app. Nao apaga dados do sistema.</p>
+                </div>
+                <button id="clearMobileCacheButton" class="secondary-button full-width" type="button">Limpar cache</button>
+                <p id="mobileCacheMessage" class="form-message" role="status"></p>
+            </div>
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260508-agenda-nav"></script>
+    <script src="static/mobile.js?v=20260510-mobile-basic-tools"></script>
 </body>
 </html>
