@@ -569,6 +569,10 @@ h3 {
     margin: 10px 0 0;
 }
 
+.action-wide {
+    grid-column: 1 / -1;
+}
+
 .remark-form {
     display: grid;
     gap: 12px;
