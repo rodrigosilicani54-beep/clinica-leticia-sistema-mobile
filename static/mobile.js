@@ -116,7 +116,15 @@
             }
         }
         try {
-            return normalizeApiBase(window.MOBILE_API_BASE_URL || localStorage.getItem("mobileApiBase") || getDefaultApiBase(), { allowBlank: true });
+            const explicitApiBase = window.MOBILE_API_BASE_URL || "";
+            if (explicitApiBase) {
+                return normalizeApiBase(explicitApiBase, { allowBlank: true });
+            }
+            if (isWebServerOrigin()) {
+                localStorage.removeItem("mobileApiBase");
+                return "";
+            }
+            return normalizeApiBase(localStorage.getItem("mobileApiBase") || getDefaultApiBase(), { allowBlank: true });
         } catch (err) {
             localStorage.removeItem("mobileApiBase");
             return getDefaultApiBase();
@@ -156,12 +164,22 @@
         return !state.apiBase && !isWebServerOrigin();
     }
 
+    function shouldShowApiConnectionFields() {
+        return needsApiSetup() || !isWebServerOrigin() || !!state.apiBase;
+    }
+
     function syncApiConfigUi() {
+        const showApiFields = shouldShowApiConnectionFields();
+        if (els.apiConfigForm) {
+            els.apiConfigForm.classList.toggle("hidden", !showApiFields);
+        }
         if (els.apiBaseInput) {
             els.apiBaseInput.value = state.apiBase;
         }
         if (els.apiConfigSummary) {
-            els.apiConfigSummary.textContent = state.apiBase || "Mesmo servidor";
+            els.apiConfigSummary.textContent = showApiFields
+                ? (state.apiBase || "Mesmo servidor")
+                : "";
         }
     }
 
@@ -169,7 +187,9 @@
         syncApiConfigUi();
         setApiConfigMessage(message || "");
         els.apiConfigSheet.classList.remove("hidden");
-        setTimeout(() => els.apiBaseInput.focus(), 0);
+        if (shouldShowApiConnectionFields()) {
+            setTimeout(() => els.apiBaseInput.focus(), 0);
+        }
     }
 
     function closeApiConfig() {
