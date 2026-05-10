@@ -199,7 +199,7 @@ h3 {
     top: 0;
     z-index: 5;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
     padding: 6px;
     border: 1px solid var(--line);
@@ -318,7 +318,8 @@ h3 {
 }
 
 .appointment-card,
-.remark-card {
+.remark-card,
+.room-card {
     display: grid;
     gap: 10px;
     padding: 13px;
@@ -350,6 +351,29 @@ h3 {
     margin: 0;
     color: var(--muted);
     font-size: 0.87rem;
+}
+
+.room-appointments {
+    display: grid;
+    gap: 8px;
+}
+
+.room-appointment {
+    display: grid;
+    gap: 2px;
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+}
+
+.room-appointment strong {
+    color: var(--primary-dark);
+    font-size: 0.86rem;
+}
+
+.room-appointment span,
+.room-empty {
+    color: var(--muted);
+    font-size: 0.84rem;
 }
 
 .status-pill {

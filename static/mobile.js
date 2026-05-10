@@ -18,7 +18,9 @@
     const state = {
         user: null,
         professionals: [],
+        rooms: [],
         appointments: [],
+        roomAppointments: [],
         remarks: [],
         selectedAppointment: null,
         canAuthorizeRemarks: false,
@@ -26,6 +28,7 @@
         agendaRange: null,
         lastAgendaUpdatedAt: null,
         lastRemarksUpdatedAt: null,
+        lastRoomsUpdatedAt: null,
         apiBase: getInitialApiBase(),
         authHeader: sessionStorage.getItem("mobileAuthHeader") || ""
     };
@@ -53,6 +56,7 @@
             "agendaStatusFilter", "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
             "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
             "refreshRemarksButton", "remarkSummary", "remarkLastUpdated", "remarkList", "agendaTab", "remarquesTab",
+            "roomsTab", "roomStatusFilter", "refreshRoomsButton", "roomsRangeLabel", "roomsLastUpdated", "roomsSummary", "roomsList",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "sheetDate", "sheetSchedule", "sheetProfessional", "sheetType",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
@@ -70,6 +74,7 @@
         els.logoutButton.addEventListener("click", handleLogout);
         els.refreshAgendaButton.addEventListener("click", () => loadAgenda({ force: true }));
         els.refreshRemarksButton.addEventListener("click", () => loadRemarks({ force: true }));
+        els.refreshRoomsButton.addEventListener("click", () => loadRoomsView({ force: true }));
         els.previousDayButton.addEventListener("click", () => moveAgendaDay(-1));
         els.todayAgendaButton.addEventListener("click", showTodayAgenda);
         els.weekAgendaButton.addEventListener("click", showCurrentWeekAgenda);
@@ -81,6 +86,7 @@
         els.professionalFilter.addEventListener("change", () => loadAgenda({ force: true }));
         els.agendaStatusFilter.addEventListener("change", renderAgenda);
         els.remarkStatusFilter.addEventListener("change", renderRemarks);
+        els.roomStatusFilter.addEventListener("change", renderRooms);
         els.remarkForm.addEventListener("submit", handleRemarkSubmit);
         els.apiConfigToggle.addEventListener("click", () => openApiConfig());
         els.appApiConfigButton.addEventListener("click", () => openApiConfig());
@@ -368,7 +374,10 @@
         await apiFetch("/api/logout", { method: "POST", skipAuth: true }).catch(() => null);
         clearMobileAuth();
         state.user = null;
+        state.professionals = [];
+        state.rooms = [];
         state.appointments = [];
+        state.roomAppointments = [];
         state.remarks = [];
         showLogin();
     }
@@ -376,7 +385,10 @@
     async function enterApp() {
         showApp();
         els.userSummary.textContent = `${state.user.name || state.user.username} - ${getRoleLabel(state.user.level)}`;
-        await loadProfessionals();
+        await Promise.all([
+            loadProfessionals(),
+            loadRooms()
+        ]);
         applyUserDefaultProfessional();
         await Promise.all([
             loadAgenda({ force: true }),
@@ -397,13 +409,19 @@
 
     function showTab(tabName) {
         const isAgenda = tabName === "agenda";
+        const isRemarks = tabName === "remarques";
+        const isRooms = tabName === "rooms";
         els.agendaTab.classList.toggle("hidden", !isAgenda);
-        els.remarquesTab.classList.toggle("hidden", isAgenda);
+        els.remarquesTab.classList.toggle("hidden", !isRemarks);
+        els.roomsTab.classList.toggle("hidden", !isRooms);
         document.querySelectorAll("[data-tab]").forEach((button) => {
             button.classList.toggle("active", button.dataset.tab === tabName);
         });
-        if (!isAgenda) {
+        if (isRemarks) {
             loadRemarks({ force: false });
+        }
+        if (isRooms) {
+            loadRoomsView({ force: false });
         }
     }
 
@@ -434,6 +452,17 @@
             });
         if ([...els.professionalFilter.options].some((option) => option.value === selected)) {
             els.professionalFilter.value = selected;
+        }
+    }
+
+    async function loadRooms() {
+        try {
+            const data = await apiFetch("/api/salas");
+            state.rooms = Array.isArray(data.salas)
+                ? data.salas.map(normalizeRoom).filter((room) => room.id && room.active !== false)
+                : [];
+        } catch (err) {
+            state.rooms = [];
         }
     }
 
@@ -610,6 +639,118 @@
         els.todayAgendaButton.classList.toggle("active", isToday);
         els.weekAgendaButton.classList.toggle("active", state.agendaMode === "week");
         els.weekAgendaButton.setAttribute("aria-pressed", state.agendaMode === "week" ? "true" : "false");
+    }
+
+    async function loadRoomsView(options = {}) {
+        state.agendaRange = getAgendaRange(getSelectedAgendaDateValue());
+        els.roomsRangeLabel.textContent = state.agendaRange.label;
+        els.roomsSummary.innerHTML = "";
+        els.roomsList.innerHTML = '<div class="empty-state">Carregando salas...</div>';
+        if (!state.rooms.length || options.force) {
+            await loadRooms();
+        }
+        await loadRoomAppointments({ force: options.force === true });
+    }
+
+    async function loadRoomAppointments(options = {}) {
+        const range = state.agendaRange || getAgendaRange(getSelectedAgendaDateValue());
+        const params = new URLSearchParams({
+            start_date: range.start,
+            end_date: range.end,
+            limit: state.agendaMode === "week" ? "2000" : "500"
+        });
+        if (options.force) {
+            params.set("force", "1");
+        }
+
+        try {
+            const data = await apiFetch(`/api/agendamentos?${params.toString()}`);
+            state.roomAppointments = Array.isArray(data.agendamentos)
+                ? data.agendamentos.map(normalizeAppointment).sort(compareAppointments)
+                : [];
+            state.lastRoomsUpdatedAt = new Date();
+            renderRooms();
+        } catch (err) {
+            updateRoomsLastUpdated();
+            els.roomsSummary.innerHTML = "";
+            els.roomsList.innerHTML = `<div class="empty-state">${escapeHtml(err.message || "Nao foi possivel carregar as salas.")}</div>`;
+        }
+    }
+
+    function renderRooms() {
+        const range = state.agendaRange || getAgendaRange(getSelectedAgendaDateValue());
+        els.roomsRangeLabel.textContent = range.label;
+        updateRoomsLastUpdated();
+
+        const appointments = state.roomAppointments.filter((appointment) => {
+            const date = normalizeDate(appointment.date);
+            return date >= range.start && date <= range.end && !["cancelado_paciente", "cancelado_profissional"].includes(appointment.status);
+        });
+        const roomRows = state.rooms.map((room) => {
+            const roomAppointments = appointments
+                .filter((appointment) => String(appointment.roomId || "") === String(room.id))
+                .sort(compareAppointments);
+            return { room, appointments: roomAppointments };
+        });
+
+        const occupiedCount = roomRows.filter((item) => item.appointments.length > 0).length;
+        const availableCount = Math.max(0, state.rooms.length - occupiedCount);
+        els.roomsSummary.innerHTML = [
+            summaryItem(state.rooms.length, "Salas"),
+            summaryItem(occupiedCount, "Ocupadas"),
+            summaryItem(availableCount, "Livres")
+        ].join("");
+
+        const filter = els.roomStatusFilter.value;
+        const visibleRows = roomRows.filter((item) => {
+            if (filter === "occupied") return item.appointments.length > 0;
+            if (filter === "available") return item.appointments.length === 0;
+            return true;
+        });
+
+        if (!visibleRows.length) {
+            els.roomsList.innerHTML = '<div class="empty-state">Nenhuma sala encontrada para este filtro.</div>';
+            return;
+        }
+
+        els.roomsList.innerHTML = "";
+        visibleRows
+            .sort((a, b) => a.room.name.localeCompare(b.room.name, "pt-BR"))
+            .forEach(({ room, appointments: roomAppointments }) => {
+                const card = document.createElement("article");
+                card.className = "room-card";
+                const statusText = roomAppointments.length
+                    ? `${roomAppointments.length} ${roomAppointments.length === 1 ? "ocupacao" : "ocupacoes"}`
+                    : "Livre no periodo";
+                const appointmentLines = roomAppointments.length
+                    ? roomAppointments.map((appointment) => `
+                        <div class="room-appointment">
+                            <strong>${escapeHtml(formatAgendaCardTime(appointment))}</strong>
+                            <span>${escapeHtml(appointment.patientName || "Paciente")}</span>
+                            <span>${escapeHtml(getProfessionalName(appointment.professionalId))}</span>
+                        </div>
+                    `).join("")
+                    : '<div class="room-empty">Sem agendamentos neste recorte.</div>';
+                card.innerHTML = `
+                    <div class="card-topline">
+                        <p class="card-title">${escapeHtml(room.name)}</p>
+                        <span class="status-pill ${roomAppointments.length ? "status-em_atendimento" : "status-finalizado"}">${escapeHtml(statusText)}</span>
+                    </div>
+                    <div class="room-appointments">${appointmentLines}</div>
+                `;
+                els.roomsList.appendChild(card);
+            });
+    }
+
+    function updateRoomsLastUpdated() {
+        if (!els.roomsLastUpdated) return;
+        if (!state.lastRoomsUpdatedAt) {
+            els.roomsLastUpdated.textContent = state.lastAgendaUpdatedAt
+                ? `Atualizado às ${formatClockTime(state.lastAgendaUpdatedAt)}`
+                : "";
+            return;
+        }
+        els.roomsLastUpdated.textContent = `Atualizado às ${formatClockTime(state.lastRoomsUpdatedAt)}`;
     }
 
     async function loadRemarks(options = {}) {
@@ -918,11 +1059,22 @@
         };
     }
 
+    function normalizeRoom(room) {
+        return {
+            id: String(room.id || room.sala_id || "").trim(),
+            name: room.nome || room.name || "Sala",
+            color: room.cor || room.color || "",
+            active: room.ativo !== false && room.active !== false
+        };
+    }
+
     function normalizeAppointment(appointment) {
         const professionalId = appointment.professionalId || appointment.profissional_id || appointment.professional_id || appointment.profissional || "";
+        const roomId = appointment.roomId || appointment.sala_id || appointment.salaId || appointment.room_id || appointment.sala || "";
         return {
             id: String(appointment.id),
             professionalId: String(professionalId || "").trim(),
+            roomId: String(roomId || "").trim(),
             patientName: appointment.clientName || appointment.paciente || appointment.patient || "",
             type: appointment.type || appointment.tipo || appointment.tipo_atendimento || "",
             date: normalizeDate(appointment.date || appointment.data || ""),

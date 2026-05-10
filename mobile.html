@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Clinica Leticia Segretti Mobile</title>
-    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-remark-polish">
+    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-rooms">
 </head>
 <body>
     <main class="mobile-shell">
@@ -46,6 +46,7 @@
             <nav class="tab-bar" aria-label="Navegacao mobile">
                 <button class="tab-button active" type="button" data-tab="agenda">Agenda</button>
                 <button class="tab-button" type="button" data-tab="remarques">Remarques</button>
+                <button class="tab-button" type="button" data-tab="rooms">Salas</button>
             </nav>
 
             <section id="agendaTab" class="tab-panel">
@@ -103,6 +104,24 @@
                 <div id="remarkSummary" class="summary-row"></div>
                 <p id="remarkLastUpdated" class="agenda-last-updated" aria-live="polite"></p>
                 <div id="remarkList" class="stack-list" aria-live="polite"></div>
+            </section>
+
+            <section id="roomsTab" class="tab-panel hidden">
+                <div class="panel filter-panel">
+                    <label>
+                        Status
+                        <select id="roomStatusFilter">
+                            <option value="">Todas</option>
+                            <option value="occupied">Ocupadas</option>
+                            <option value="available">Livres</option>
+                        </select>
+                    </label>
+                    <button id="refreshRoomsButton" class="secondary-button" type="button">Atualizar</button>
+                    <p id="roomsRangeLabel" class="agenda-range-label" aria-live="polite"></p>
+                    <p id="roomsLastUpdated" class="agenda-last-updated" aria-live="polite"></p>
+                </div>
+                <div id="roomsSummary" class="summary-row"></div>
+                <div id="roomsList" class="stack-list" aria-live="polite"></div>
             </section>
         </section>
     </main>
@@ -225,6 +244,6 @@
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260510-mobile-remark-polish"></script>
+    <script src="static/mobile.js?v=20260510-mobile-rooms"></script>
 </body>
 </html>
