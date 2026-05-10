@@ -1234,6 +1234,26 @@ def invalidate_app_config_cache():
         APP_CONFIG_CACHE.clear()
 
 
+def clear_runtime_caches():
+    cleared = {}
+    with TABLE_COLUMNS_CACHE_LOCK:
+        cleared['table_columns'] = len(TABLE_COLUMNS_CACHE)
+        TABLE_COLUMNS_CACHE.clear()
+    with AGENDAMENTOS_LIST_CACHE_LOCK:
+        cleared['agendamentos'] = len(AGENDAMENTOS_LIST_CACHE)
+        AGENDAMENTOS_LIST_CACHE.clear()
+    with AUTH_USER_CACHE_LOCK:
+        cleared['auth_users'] = len(AUTH_USER_CACHE)
+        AUTH_USER_CACHE.clear()
+    with REMARQUE_LIST_CACHE_LOCK:
+        cleared['remarques'] = len(REMARQUE_LIST_CACHE)
+        REMARQUE_LIST_CACHE.clear()
+    with APP_CONFIG_CACHE_LOCK:
+        cleared['configuracoes'] = len(APP_CONFIG_CACHE)
+        APP_CONFIG_CACHE.clear()
+    return cleared
+
+
 def ensure_app_config_table(cur):
     global APP_CONFIG_SCHEMA_READY
     if APP_CONFIG_SCHEMA_READY:
@@ -2091,6 +2111,14 @@ def authenticated_user_info():
 def logout_user():
     session.pop('current_user', None)
     return jsonify({'success': True})
+
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    auth_check = require_authenticated()
+    if auth_check:
+        return auth_check
+    return jsonify({'success': True, 'cleared': clear_runtime_caches()})
 
 
 @app.route("/api/usuarios/<username>", methods=["PUT"])
@@ -6280,6 +6308,22 @@ pasta_dados = os.path.join(base_path, "dados")
 class Api:
     def ping(self):
         return {"status": "ok"}
+
+    def limpar_cache(self):
+        result = {"success": True, "desktop": True, "cookies_cleared": False}
+        try:
+            if webview is None:
+                result["desktop"] = False
+                return result
+
+            window = webview.active_window()
+            if window and hasattr(window, "clear_cookies"):
+                window.clear_cookies()
+                result["cookies_cleared"] = True
+            return result
+        except Exception as e:
+            print(f"[API] Erro ao limpar cache do WebView: {e}")
+            return {"success": False, "error": str(e)}
 
     def salvar_arquivo(self, data):
         """

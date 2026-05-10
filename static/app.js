@@ -162,11 +162,6 @@
         let selectedProfessional = '';
         let isSavingAppointment = false;
         
-        // Hidden system reset variables
-        let resetSequence = [];
-        let resetSequenceTarget = ['professionals', 'professionals', 'professionals', 'professionals', 'professionals'];
-        let resetSequenceTimeout = null;
-
         let updateCheckIntervalId = null;
         const REFRESH_POLL_INTERVAL_MS = 30000;
         const FULL_REFRESH_CHECK_INTERVAL_MS = 5 * 60 * 1000;
@@ -294,7 +289,6 @@
                 canImport: true,
                 canBulkEdit: true,
                 canBulkCancel: true,
-                canSystemReset: true,
                 canManageProfessionals: true,
                 canManageUsers: true
             },
@@ -313,7 +307,6 @@
                 canImport: true,
                 canBulkEdit: true,
                 canBulkCancel: false,
-                canSystemReset: false,
                 canManageProfessionals: true,
                 canManageUsers: false
             },
@@ -332,7 +325,6 @@
                 canImport: false,
                 canBulkEdit: false,
                 canBulkCancel: false,
-                canSystemReset: false,
                 canManageProfessionals: false,
                 canManageUsers: false
             }
@@ -1155,11 +1147,6 @@
                 exportReportButton.style.display = checkPermission('exportReport') ? 'block' : 'none';
             }
             
-            // Always hide reset button initially - only admins can see it through sequence
-            const resetButton = document.getElementById('hiddenResetButton');
-            if (resetButton) {
-                resetButton.style.display = 'none';
-            }
             const remarkRequestsButton = document.getElementById('remarkRequestsButton');
             if (remarkRequestsButton) {
                 remarkRequestsButton.style.display = canAuthorizeRemarkRequests() ? 'inline-block' : 'none';
@@ -1855,8 +1842,6 @@
                     return !!userPermissions.canBulkEdit;
                 case 'bulkCancel':
                     return !!userPermissions.canBulkCancel;
-                case 'systemReset':
-                    return !!userPermissions.canSystemReset;
                 case 'manageProfessionals':
                     return !!userPermissions.canManageProfessionals;
                 case 'manageUsers':
@@ -1892,7 +1877,6 @@
                 import: 'importar',
                 bulkEdit: 'edição em lote',
                 bulkCancel: 'cancelar agendamentos em massa',
-                systemReset: 'resetar sistema',
                 manageProfessionals: 'gerenciar profissionais',
                 manageUsers: 'gerenciar usuários',
                 view: 'visualizar',
@@ -12128,257 +12112,170 @@
             alert(details);
         }
 
-        // Hidden System Reset Functions
-        function trackResetSequence(buttonType) {
-            // Only allow admins to activate reset sequence
-            if (!currentUser || currentUser.level !== 'admin') {
+        function isDesktopWebview() {
+            return !!(window.pywebview && window.pywebview.api);
+        }
+
+        function openConfigModal() {
+            const modal = document.getElementById('configModal');
+            if (!modal) return;
+
+            const environmentLabel = document.getElementById('cacheEnvironmentLabel');
+            if (environmentLabel) {
+                environmentLabel.textContent = isDesktopWebview()
+                    ? 'Ambiente: aplicativo desktop (.exe)'
+                    : 'Ambiente: navegador / link online';
+            }
+
+            setClearCacheStatus('', 'neutral');
+            modal.classList.add('active');
+        }
+
+        function setClearCacheStatus(message, tone = 'neutral') {
+            const status = document.getElementById('clearCacheStatus');
+            if (!status) return;
+
+            if (!message) {
+                status.className = 'hidden mt-3 text-sm';
+                status.textContent = '';
                 return;
             }
-            
-            // Clear any existing timeout
-            if (resetSequenceTimeout) {
-                clearTimeout(resetSequenceTimeout);
-            }
-            
-            // Add button to sequence
-            resetSequence.push(buttonType);
-            
-            // Keep only the last 5 clicks
-            if (resetSequence.length > 5) {
-                resetSequence.shift();
-            }
-            
-            // Check if sequence matches target
-            if (resetSequence.length === 5 && 
-                JSON.stringify(resetSequence) === JSON.stringify(resetSequenceTarget)) {
-                
-                // Show hidden reset button
-                const resetButton = document.getElementById('hiddenResetButton');
-                resetButton.style.display = 'inline-block';
-                resetButton.classList.add('animate-pulse');
-                
-                // Add visual feedback
-                resetButton.style.animation = 'pulse 1s infinite';
-                
-                // Auto-hide after 10 seconds
-                setTimeout(() => {
-                    resetButton.style.display = 'none';
-                    resetButton.classList.remove('animate-pulse');
-                    resetSequence = [];
-                }, 10000);
-                
-                // Show subtle notification
-                showResetActivatedMessage();
-            }
-            
-            // Reset sequence after 5 seconds of inactivity
-            resetSequenceTimeout = setTimeout(() => {
-                resetSequence = [];
-            }, 5000);
+
+            const classes = {
+                neutral: 'mt-3 text-sm text-gray-700',
+                success: 'mt-3 text-sm text-green-700',
+                error: 'mt-3 text-sm text-red-700'
+            };
+            status.className = classes[tone] || classes.neutral;
+            status.textContent = message;
         }
 
-        function showResetActivatedMessage() {
-            const notification = document.createElement('div');
-            notification.className = 'fixed top-4 left-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm';
-            notification.innerHTML = '🔥 MODO ADMINISTRADOR: Botão de Reset Total ativado por 10 segundos';
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
+        async function clearServerRuntimeCache() {
+            try {
+                const response = await fetch(apiUrl('/api/cache/clear'), {
+                    method: 'POST',
+                    headers: getAuthenticatedHeaders(true),
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
+                if (!response.ok) {
+                    return { success: false, skipped: true };
                 }
-            }, 3000);
+                return await response.json();
+            } catch (err) {
+                console.warn('[clearApplicationCache] Nao foi possivel limpar cache do servidor:', err);
+                return { success: false, skipped: true };
+            }
         }
 
-        function executeSystemReset() {
-            if (!checkPermission('systemReset')) {
-                showPermissionDenied('systemReset');
+        async function clearDesktopWebviewCache() {
+            if (!isDesktopWebview() || typeof window.pywebview.api.limpar_cache !== 'function') {
+                return { success: true, skipped: true };
+            }
+
+            try {
+                return await window.pywebview.api.limpar_cache();
+            } catch (err) {
+                console.warn('[clearApplicationCache] Nao foi possivel limpar cache do WebView:', err);
+                return { success: false, error: err.message };
+            }
+        }
+
+        async function clearBrowserCacheStorage() {
+            let deletedCaches = 0;
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(cacheName => caches.delete(cacheName)));
+                deletedCaches = cacheNames.length;
+            }
+
+            let unregisteredWorkers = 0;
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(registration => registration.unregister()));
+                unregisteredWorkers = registrations.length;
+            }
+
+            return { deletedCaches, unregisteredWorkers };
+        }
+
+        function clearLocalAppStorageCache() {
+            const keysToRemove = [
+                'appointments',
+                'professionals',
+                'rooms',
+                'patients',
+                'waitlistItems',
+                'remarkRequests',
+                'remarkRequestsEnabled',
+                'systemUsers',
+                'currentUser',
+                'debugLogs'
+            ];
+
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('remarkNotificationsSeen:')) {
+                    localStorage.removeItem(key);
+                }
+            }
+
+            sessionStorage.clear();
+
+            professionals = [];
+            appointments = [];
+            rooms = [];
+            remarkRequests = [];
+            waitlistItems = [];
+            patientListCache = [];
+            waitlistOptions = { pacientes: [], profissionais: [], salas: [] };
+            waitlistFetchPromise = null;
+            waitlistOptionsFetchPromise = null;
+            lastServerSyncState = null;
+            lastFullServerCheckAt = 0;
+        }
+
+        function reloadWithoutCache() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('_cache', String(Date.now()));
+            window.location.replace(url.toString());
+        }
+
+        async function clearApplicationCache() {
+            if (hasPendingAppointmentSync()) {
+                showErrorMessage('Existem agendamentos pendentes de sincronizacao. Sincronize antes de limpar o cache.');
                 return;
             }
-            
-            const confirmMessage = `🔥 ATENÇÃO: FORMATAÇÃO COMPLETA DO SISTEMA\n\n` +
-                `Esta ação irá FORMATAR COMPLETAMENTE o programa:\n\n` +
-                `💥 EXCLUSÃO TOTAL E PERMANENTE:\n` +
-                `• TODOS os profissionais (${professionals.length} cadastrados)\n` +
-                `• TODOS os agendamentos (${appointments.length} registros)\n` +
-                `• TODAS as planilhas importadas\n` +
-                `• TODOS os dados salvos no navegador\n` +
-                `• TODAS as configurações e filtros\n` +
-                `• TODO o histórico de ações\n` +
-                `• TODOS os dados de login salvos\n\n` +
-                `🔄 RESTAURAÇÃO:\n` +
-                `• Sistema volta ao estado inicial (zero dados)\n` +
-                `• Como se fosse a primeira vez usando\n` +
-                `• Nenhum dado será recuperável\n` +
-                `• Todas as importações serão perdidas\n\n` +
-                `⚠️ ESTA AÇÃO É IRREVERSÍVEL E PERMANENTE!\n` +
-                `⚠️ NÃO HÁ COMO DESFAZER ESTA OPERAÇÃO!\n` +
-                `⚠️ APENAS ADMINISTRADORES PODEM EXECUTAR!\n\n` +
-                `Digite exatamente "CONFIRMAR RESET" para continuar:`;
 
-            const userInput = prompt(confirmMessage);
-            
-            if (userInput === "CONFIRMAR RESET") {
-                const finalConfirm = confirm(`🚨 ÚLTIMA CONFIRMAÇÃO - FORMATAÇÃO TOTAL\n\n` +
-                    `Você está prestes a FORMATAR COMPLETAMENTE o sistema!\n\n` +
-                    `📊 Dados que serão PERDIDOS PARA SEMPRE:\n` +
-                    `• ${professionals.length} profissionais cadastrados\n` +
-                    `• ${appointments.length} agendamentos salvos\n` +
-                    `• Todas as importações realizadas\n` +
-                    `• Todo o histórico de trabalho\n\n` +
-                    `💀 ESTA É SUA ÚLTIMA CHANCE DE CANCELAR!\n\n` +
-                    `Tem ABSOLUTA CERTEZA que deseja FORMATAR TUDO?`);
-                
-                if (finalConfirm) {
-                    // Show formatting progress
-                    const formatNotification = document.createElement('div');
-                    formatNotification.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-800 text-white px-8 py-6 rounded-lg shadow-2xl z-50 text-center';
-                    formatNotification.innerHTML = `
-                        <div class="text-4xl mb-3">🔥</div>
-                        <div class="text-xl font-bold mb-2">FORMATANDO SISTEMA...</div>
-                        <div class="text-sm">Apagando todos os dados...</div>
-                        <div class="animate-pulse text-xs mt-2">Por favor aguarde...</div>
-                    `;
-                    document.body.appendChild(formatNotification);
-                    
-                    // Simulate formatting delay for dramatic effect
-                    setTimeout(() => {
-                        // COMPLETE SYSTEM WIPE - Clear ALL possible data
-                        
-                        // 1. Clear localStorage completely
-                        localStorage.clear();
-                        
-                        // 2. Clear sessionStorage as well
-                        sessionStorage.clear();
-                        
-                        // 3. Reset ALL global variables to initial state
-                        professionals = [];
-                        appointments = [];
-                        selectedProfessional = '';
-                        currentWeek = new Date();
-                        currentView = 'home';
-                        
-                        // 4. Clear all analysis data and imported data
-                        currentAbsenceAnalysis = null;
-                        currentReplacementAnalysis = null;
-                        selectedAbsenceReplacements = [];
-                        selectedBulkAppointments = [];
-                        filteredBulkAppointments = [];
-                        conflictResolutions = [];
-                        selectedResolutions = {};
-                        importPreviewData = null;
-                        selectedFile = null;
-                        
-                        // 4.1. Clear any cached or temporary data
-                        if (window.importedData) delete window.importedData;
-                        if (window.exportedData) delete window.exportedData;
-                        
-                        // 5. Reset sequence tracking
-                        resetSequence = [];
-                        if (resetSequenceTimeout) {
-                            clearTimeout(resetSequenceTimeout);
-                            resetSequenceTimeout = null;
-                        }
-                        
-                        // 6. Clear all form inputs
-                        const allInputs = document.querySelectorAll('input, select, textarea');
-                        allInputs.forEach(input => {
-                            if (input.type === 'checkbox' || input.type === 'radio') {
-                                input.checked = false;
-                            } else {
-                                input.value = '';
-                            }
-                        });
-                        
-                        // 7. Close all modals
-                        const allModals = document.querySelectorAll('.modal');
-                        allModals.forEach(modal => {
-                            modal.classList.remove('active');
-                        });
-                        
-                        // 8. Hide reset button
-                        document.getElementById('hiddenResetButton').style.display = 'none';
-                        
-                        // 9. Clear all dynamic content
-                        document.getElementById('scheduleGrid').innerHTML = '';
-                        document.getElementById('weeklyScheduleGrid').innerHTML = '';
-                        document.getElementById('professionalsList').innerHTML = '';
-                        document.getElementById('reportsContent').innerHTML = '';
-                        document.getElementById('bulkAppointmentsList').innerHTML = '';
-                        
-                        // 10. Reset all filters and searches
-                        document.getElementById('professionalFilter').innerHTML = '<option value="">Todos os Profissionais</option>';
-                        document.getElementById('weeklyProfessionalFilter').innerHTML = '<option value="">Todos os Profissionais</option>';
-                        document.getElementById('appointmentProfessional').innerHTML = '<option value="">Selecione o profissional...</option>';
-                        document.getElementById('mainProfessionalSearch').value = '';
-                        document.getElementById('professionalSearch').value = '';
-                        
-                        // 11. Hide selected professional info
-                        document.getElementById('selectedProfessionalInfo').classList.add('hidden');
-                        document.getElementById('weeklyEmptyState').classList.remove('hidden');
-                        
-                        // 12. Reset bulk edit filters
-                        clearBulkFilters();
-                        
-                        // 13. Force reload all UI components
-                        updateProfessionalFilter();
-                        updateWeeklyProfessionalFilter();
-                        refreshActiveScheduleViews();
-                        
-                        // Remove formatting notification
-                        if (formatNotification.parentNode) {
-                            formatNotification.parentNode.removeChild(formatNotification);
-                        }
-                        
-                        // Show dramatic success message
-                        const successNotification = document.createElement('div');
-                        successNotification.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-green-600 text-white px-10 py-8 rounded-lg shadow-2xl z-50 text-center max-w-md';
-                        successNotification.innerHTML = `
-                            <div class="text-6xl mb-4">✅</div>
-                            <div class="text-2xl font-bold mb-3">SISTEMA FORMATADO!</div>
-                            <div class="text-sm mb-2">🔥 Formatação completa realizada com sucesso</div>
-                            <div class="text-sm mb-2">💾 Todos os dados foram permanentemente removidos</div>
-                            <div class="text-sm mb-4">🆕 Sistema restaurado ao estado inicial</div>
-                            <div class="text-xs bg-green-700 px-3 py-2 rounded">
-                                O programa está agora como se fosse a primeira vez sendo usado
-                            </div>
-                        `;
-                        
-                        document.body.appendChild(successNotification);
-                        
-                        // Auto-remove success notification after 8 seconds
-                        setTimeout(() => {
-                            if (successNotification.parentNode) {
-                                successNotification.parentNode.removeChild(successNotification);
-                            }
-                        }, 8000);
-                        
-                        // Force return to home view (clean state)
-                        showHomeView();
-                        
-                        // Optional: Force page reload for complete reset (uncomment if needed)
-                        // setTimeout(() => {
-                        //     window.location.reload();
-                        // }, 3000);
-                        
-                    }, 2000); // 2 second delay for dramatic effect
-                    
-                } else {
-                    alert('❌ Formatação cancelada pelo usuário');
-                }
-            } else {
-                alert('❌ Texto de confirmação incorreto. Formatação cancelada por segurança.\n\nVocê deve digitar exatamente: CONFIRMAR RESET');
+            const confirmed = await showYesNoConfirm({
+                title: 'Limpar cache',
+                message: 'Isso nao apaga dados do banco. O sistema vai limpar dados temporarios deste dispositivo e recarregar a tela.',
+                yesText: 'Limpar cache',
+                noText: 'Cancelar'
+            });
+            if (!confirmed) return;
+
+            const button = document.getElementById('clearCacheButton');
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Limpando...';
             }
-            
-            // Hide reset button after use (regardless of outcome)
-            document.getElementById('hiddenResetButton').style.display = 'none';
-            resetSequence = [];
-        }
+            setClearCacheStatus('Limpando cache local e atualizando o servidor...', 'neutral');
 
-        // Clear All Data Function
-        function clearAllData() {
-            showErrorMessage('Recurso "Limpar Tudo" desativado por seguranca.');
+            await clearServerRuntimeCache();
+            await clearDesktopWebviewCache();
+            try {
+                await clearBrowserCacheStorage();
+            } catch (err) {
+                console.warn('[clearApplicationCache] Nao foi possivel limpar Cache Storage:', err);
+            }
+            clearLocalAppStorageCache();
+
+            setClearCacheStatus('Cache limpo. Recarregando o sistema...', 'success');
+            showSuccessMessage('Cache limpo com sucesso. Recarregando...');
+
+            setTimeout(reloadWithoutCache, 900);
         }
 
         // Close modals when clicking outside, but keep the login modal locked until successful login

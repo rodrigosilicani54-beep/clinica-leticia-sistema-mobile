@@ -326,7 +326,7 @@
 
             <!-- Botões de Ação -->
             <div class="flex flex-wrap gap-2">
-                <button onclick="showHomeView(); trackResetSequence('home')" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                <button onclick="showHomeView()" class="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     Inicio
                 </button>
                 <button onclick="showDailyPanelView()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
@@ -335,13 +335,13 @@
                 <button onclick="showWaitlistView()" class="bg-violet-700 hover:bg-violet-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     Lista de Espera
                 </button>
-                <button onclick="showProfessionalsView(); trackResetSequence('professionals')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                <button onclick="showProfessionalsView()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     📋 Profissionais
                 </button>
-                <button id="btnCreateProfessional" onclick="openProfessionalModal(); trackResetSequence('cadastrar')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                <button id="btnCreateProfessional" onclick="openProfessionalModal()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     👨‍⚕️ Cadastrar Profissional
                 </button>
-                <button id="btnCreatePatient" onclick="openPatientModal(); trackResetSequence('cadastrar')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                <button id="btnCreatePatient" onclick="openPatientModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     👤 Cadastrar Paciente
                 </button>
                 <button onclick="openPatientListModal()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
@@ -382,9 +382,8 @@
                 <button id="syncCloudButton" onclick="openSyncModal()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors" style="display: none;">
                     ☁️ Sincronizar Nuvem
                 </button>
-                <!-- Hidden System Reset Button -->
-                <button id="hiddenResetButton" onclick="executeSystemReset()" class="bg-red-800 hover:bg-red-900 text-white px-3 py-1 rounded text-sm font-medium transition-colors" style="display: none;">
-                    🔥 RESETAR SISTEMA
+                <button onclick="openConfigModal()" class="bg-gray-700 hover:bg-gray-800 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Config
                 </button>
             </div>
         </div>
@@ -2024,6 +2023,37 @@
         </div>
     </div>
 
+    <!-- Config Modal -->
+    <div id="configModal" class="modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-lg mx-4">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                    <h3 class="text-2xl font-bold text-gray-800">Configurações</h3>
+                    <p class="text-sm text-gray-600 mt-1">Manutenção local do sistema.</p>
+                </div>
+                <button type="button" onclick="closeModal('configModal')" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-lg">
+                    Fechar
+                </button>
+            </div>
+
+            <div class="border rounded-lg p-4 bg-gray-50">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div class="font-semibold text-gray-800">Limpar cache</div>
+                        <div id="cacheEnvironmentLabel" class="text-xs text-gray-500 mt-1">Detectando ambiente...</div>
+                    </div>
+                    <button type="button" id="clearCacheButton" onclick="clearApplicationCache()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium">
+                        Limpar cache
+                    </button>
+                </div>
+                <div id="clearCacheStatus" class="hidden mt-3 text-sm"></div>
+                <p class="text-xs text-gray-500 mt-3">
+                    Não apaga profissionais, pacientes ou agendamentos do banco. Limpa dados temporários desta tela e recarrega o sistema.
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- Login Modal -->
     <div id="loginModal" class="modal active">
         <div class="bg-white rounded-lg p-8 w-full max-w-md mx-4">
@@ -2173,14 +2203,16 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260508-hpt-report-filters"></script>
+    <script src="static/app.js?v=20260510-cache-settings"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
             console.log("Resposta do Python:", resp);
         }
 
-        testarPython();
+        if (window.pywebview && window.pywebview.api) {
+            testarPython();
+        }
     </script>
 </body>
 </html>
