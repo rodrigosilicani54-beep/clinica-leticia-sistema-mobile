@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -63,6 +64,7 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
 
         webView.setBackgroundColor(Color.WHITE);
+        webView.addJavascriptInterface(new MobileBridge(), "ClinicaMobile");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -119,16 +121,57 @@ public class MainActivity extends Activity {
         webView.loadDataWithBaseURL(APP_URL, html, "text/html", "UTF-8", null);
     }
 
+    private class MobileBridge {
+        @JavascriptInterface
+        public void clearAppCache() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (webView == null) {
+                        return;
+                    }
+                    webView.clearCache(true);
+                    webView.clearFormData();
+                    CookieManager.getInstance().removeAllCookies(null);
+                    CookieManager.getInstance().flush();
+                }
+            });
+        }
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
+        if (webView == null) {
+            super.onBackPressed();
             return;
         }
+
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "var api=document.getElementById('apiConfigSheet');"
+                        + "if(api&&!api.classList.contains('hidden')){api.classList.add('hidden');return true;}"
+                        + "var sheet=document.getElementById('appointmentSheet');"
+                        + "if(sheet&&!sheet.classList.contains('hidden')){sheet.classList.add('hidden');return true;}"
+                        + "return false;"
+                        + "})()",
+                handled -> {
+                    if ("true".equals(handled)) {
+                        return;
+                    }
+                    if (webView.canGoBack()) {
+                        webView.goBack();
+                        return;
+                    }
+                    closeApp();
+                }
+        );
+    }
+
+    private void closeApp() {
         super.onBackPressed();
     }
 }

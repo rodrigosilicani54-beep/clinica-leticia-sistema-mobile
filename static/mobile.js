@@ -260,6 +260,7 @@
         try {
             await apiFetch("/api/cache/clear", { method: "POST" }).catch(() => null);
             await apiFetch("/api/logout", { method: "POST", skipAuth: true }).catch(() => null);
+            clearNativeAppCache();
             await clearBrowserCacheStorage().catch(() => null);
             expireVisibleCookies();
 
@@ -273,14 +274,24 @@
             clearMobileAuth();
             state.user = null;
             state.professionals = [];
+            state.rooms = [];
             state.appointments = [];
+            state.roomAppointments = [];
             state.remarks = [];
             state.lastAgendaUpdatedAt = null;
+            state.lastRemarksUpdatedAt = null;
+            state.lastRoomsUpdatedAt = null;
             setMobileCacheMessage("Cache limpo. Recarregando...", false, true);
             setTimeout(reloadWithoutCache, 800);
         } catch (err) {
             setMobileCacheMessage(err.message || "Nao foi possivel limpar o cache.", true);
             setBusy(els.clearMobileCacheButton, false);
+        }
+    }
+
+    function clearNativeAppCache() {
+        if (window.ClinicaMobile && typeof window.ClinicaMobile.clearAppCache === "function") {
+            window.ClinicaMobile.clearAppCache();
         }
     }
 

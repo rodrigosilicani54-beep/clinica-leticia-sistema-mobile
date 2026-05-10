@@ -1,0 +1,19 @@
+{
+    "name": "Clinica Leticia Mobile",
+    "short_name": "Clinica Leticia",
+    "description": "Agenda mobile da Clinica Leticia Segretti.",
+    "start_url": "/mobile",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#f7faf8",
+    "theme_color": "#f7faf8",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "/static/mobile-icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ]
+}
