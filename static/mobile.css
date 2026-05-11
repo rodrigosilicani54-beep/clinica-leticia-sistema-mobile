@@ -232,10 +232,18 @@ h3 {
     padding: 12px;
 }
 
-.agenda-nav {
+.agenda-nav,
+.rooms-nav {
     display: grid;
-    grid-template-columns: 44px 1fr 1fr 44px;
     gap: 8px;
+}
+
+.agenda-nav {
+    grid-template-columns: 44px 1fr 1fr 44px;
+}
+
+.rooms-nav {
+    grid-template-columns: 44px 1fr 44px;
 }
 
 .nav-button {
@@ -248,7 +256,8 @@ h3 {
     line-height: 1;
 }
 
-.agenda-nav .active {
+.agenda-nav .active,
+.rooms-nav .active {
     background: var(--primary);
     color: #ffffff;
 }
@@ -646,6 +655,7 @@ h3 {
     }
 
     .agenda-nav,
+    .rooms-nav,
     .agenda-range-label,
     .agenda-last-updated {
         grid-column: 1 / -1;

@@ -13,7 +13,7 @@
     <link rel="manifest" href="static/mobile.webmanifest">
     <link rel="icon" href="static/mobile-icon-192.png">
     <link rel="apple-touch-icon" href="static/mobile-icon-192.png">
-    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-final">
+    <link rel="stylesheet" href="static/mobile.css?v=20260510-mobile-room-nav">
 </head>
 <body>
     <main class="mobile-shell">
@@ -126,6 +126,11 @@
                         </select>
                     </label>
                     <button id="refreshRoomsButton" class="secondary-button" type="button">Atualizar</button>
+                    <div class="rooms-nav" aria-label="Navegacao das salas">
+                        <button id="previousRoomDayButton" class="nav-button" type="button" aria-label="Dia anterior">&lsaquo;</button>
+                        <button id="todayRoomsButton" class="secondary-button" type="button" aria-pressed="false">Hoje</button>
+                        <button id="nextRoomDayButton" class="nav-button" type="button" aria-label="Proximo dia">&rsaquo;</button>
+                    </div>
                     <p id="roomsRangeLabel" class="agenda-range-label" aria-live="polite"></p>
                     <p id="roomsLastUpdated" class="agenda-last-updated" aria-live="polite"></p>
                 </div>
@@ -253,6 +258,6 @@
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260510-mobile-final"></script>
+    <script src="static/mobile.js?v=20260510-mobile-room-nav"></script>
 </body>
 </html>

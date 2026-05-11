@@ -25,6 +25,7 @@
         selectedAppointment: null,
         canAuthorizeRemarks: false,
         agendaMode: "day",
+        agendaNeedsRefresh: false,
         agendaRange: null,
         lastAgendaUpdatedAt: null,
         lastRemarksUpdatedAt: null,
@@ -56,7 +57,8 @@
             "agendaStatusFilter", "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
             "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
             "refreshRemarksButton", "remarkSummary", "remarkLastUpdated", "remarkList", "agendaTab", "remarquesTab",
-            "roomsTab", "roomStatusFilter", "refreshRoomsButton", "roomsRangeLabel", "roomsLastUpdated", "roomsSummary", "roomsList",
+            "roomsTab", "roomStatusFilter", "refreshRoomsButton", "previousRoomDayButton", "todayRoomsButton",
+            "nextRoomDayButton", "roomsRangeLabel", "roomsLastUpdated", "roomsSummary", "roomsList",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "sheetDate", "sheetSchedule", "sheetProfessional", "sheetType",
             "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
@@ -79,6 +81,9 @@
         els.todayAgendaButton.addEventListener("click", showTodayAgenda);
         els.weekAgendaButton.addEventListener("click", showCurrentWeekAgenda);
         els.nextDayButton.addEventListener("click", () => moveAgendaDay(1));
+        els.previousRoomDayButton.addEventListener("click", () => moveRoomsDay(-1));
+        els.todayRoomsButton.addEventListener("click", showTodayRooms);
+        els.nextRoomDayButton.addEventListener("click", () => moveRoomsDay(1));
         els.agendaDateInput.addEventListener("change", () => {
             state.agendaMode = "day";
             loadAgenda({ force: true });
@@ -278,6 +283,7 @@
             state.appointments = [];
             state.roomAppointments = [];
             state.remarks = [];
+            state.agendaNeedsRefresh = false;
             state.lastAgendaUpdatedAt = null;
             state.lastRemarksUpdatedAt = null;
             state.lastRoomsUpdatedAt = null;
@@ -390,6 +396,7 @@
         state.appointments = [];
         state.roomAppointments = [];
         state.remarks = [];
+        state.agendaNeedsRefresh = false;
         showLogin();
     }
 
@@ -428,10 +435,18 @@
         document.querySelectorAll("[data-tab]").forEach((button) => {
             button.classList.toggle("active", button.dataset.tab === tabName);
         });
+        if (isAgenda && state.agendaNeedsRefresh) {
+            state.agendaNeedsRefresh = false;
+            loadAgenda({ force: true });
+        }
         if (isRemarks) {
             loadRemarks({ force: false });
         }
         if (isRooms) {
+            if (state.agendaMode !== "day") {
+                state.agendaNeedsRefresh = true;
+            }
+            state.agendaMode = "day";
             loadRoomsView({ force: false });
         }
     }
@@ -623,6 +638,21 @@
         loadAgenda({ force: true });
     }
 
+    function moveRoomsDay(delta) {
+        const next = addDays(parseDateInput(getSelectedAgendaDateValue()), delta);
+        state.agendaMode = "day";
+        els.agendaDateInput.value = toDateInputValue(next);
+        state.agendaNeedsRefresh = true;
+        loadRoomsView({ force: true });
+    }
+
+    function showTodayRooms() {
+        state.agendaMode = "day";
+        els.agendaDateInput.value = toDateInputValue(new Date());
+        state.agendaNeedsRefresh = true;
+        loadRoomsView({ force: true });
+    }
+
     function getAgendaRange(dateValue) {
         if (state.agendaMode !== "week") {
             return {
@@ -655,6 +685,7 @@
     async function loadRoomsView(options = {}) {
         state.agendaRange = getAgendaRange(getSelectedAgendaDateValue());
         els.roomsRangeLabel.textContent = state.agendaRange.label;
+        updateRoomsNavUi();
         els.roomsSummary.innerHTML = "";
         els.roomsList.innerHTML = '<div class="empty-state">Carregando salas...</div>';
         if (!state.rooms.length || options.force) {
@@ -691,6 +722,7 @@
     function renderRooms() {
         const range = state.agendaRange || getAgendaRange(getSelectedAgendaDateValue());
         els.roomsRangeLabel.textContent = range.label;
+        updateRoomsNavUi();
         updateRoomsLastUpdated();
 
         const appointments = state.roomAppointments.filter((appointment) => {
@@ -762,6 +794,13 @@
             return;
         }
         els.roomsLastUpdated.textContent = `Atualizado às ${formatClockTime(state.lastRoomsUpdatedAt)}`;
+    }
+
+    function updateRoomsNavUi() {
+        if (!els.todayRoomsButton) return;
+        const isToday = state.agendaMode === "day" && els.agendaDateInput.value === toDateInputValue(new Date());
+        els.todayRoomsButton.classList.toggle("active", isToday);
+        els.todayRoomsButton.setAttribute("aria-pressed", isToday ? "true" : "false");
     }
 
     async function loadRemarks(options = {}) {
