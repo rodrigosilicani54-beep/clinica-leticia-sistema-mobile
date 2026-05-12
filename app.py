@@ -5256,10 +5256,6 @@ def listar_agendamentos():
         if end_date:
             query_where.append('data::date <= %s')
             params.append(end_date)
-        if profissional_filter:
-            query_where.append('profissional::text = %s')
-            params.append(str(profissional_filter))
-
         try:
             limit = int(request.args.get('limit') or 1000)
         except Exception:
@@ -5284,6 +5280,14 @@ def listar_agendamentos():
         appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
         ensure_agendamento_recurrence_columns(cur, appointment_cols)
         conn.commit()
+
+        if profissional_filter:
+            if 'profissional_id' in appointment_cols:
+                query_where.append('(profissional_id::text = %s OR profissional::text = %s)')
+                params.extend([str(profissional_filter), str(profissional_filter)])
+            else:
+                query_where.append('profissional::text = %s')
+                params.append(str(profissional_filter))
 
         select_fields = ['id', 'profissional', 'paciente', 'tipo_atendimento', 'data', 'hora_inicio', 'hora_fim']
         if 'quantidade_sessoes' in appointment_cols:

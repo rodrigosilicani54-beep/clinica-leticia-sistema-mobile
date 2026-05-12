@@ -169,6 +169,10 @@
         let lastServerSyncState = null;
         let lastFullServerCheckAt = 0;
         let agendaSyncInFlight = null;
+        let agendaSyncInFlightKey = '';
+        const appointmentWindowCache = new Set();
+        let remarkConflictFetchTimer = null;
+        let remarkConflictFetchKey = '';
         const DEBUG_LOGS = localStorage.getItem('debugLogs') === 'true';
         function debugLog(...args) {
             if (DEBUG_LOGS) {
@@ -244,16 +248,119 @@
             }
         }
 
+        function getWeekAppointmentFetchOptions(referenceDate = currentWeek, extra = {}) {
+            const weekDays = getWeekDays(referenceDate || new Date()).slice(1, 7);
+            return {
+                startDate: formatDate(weekDays[0]),
+                endDate: formatDate(weekDays[weekDays.length - 1]),
+                limit: 2000,
+                ...extra
+            };
+        }
+
+        function getCurrentAgendaAppointmentFetchOptions(extra = {}) {
+            const options = currentView === 'dailyPanel'
+                ? {
+                    startDate: document.getElementById('dailyPanelDate')?.value || formatDate(new Date()),
+                    endDate: document.getElementById('dailyPanelDate')?.value || formatDate(new Date()),
+                    limit: 1000
+                }
+                : getWeekAppointmentFetchOptions(currentWeek);
+
+            let professionalId = '';
+            if (currentView === 'dailyPanel') {
+                professionalId = document.getElementById('dailyPanelProfessionalFilter')?.value || '';
+            } else if (selectedProfessional) {
+                professionalId = selectedProfessional;
+            }
+            if (!professionalId && currentUser?.level === 'viewer' && currentUser?.professionalId) {
+                professionalId = currentUser.professionalId;
+            }
+            if (professionalId) {
+                options.professionalId = String(professionalId).trim();
+            }
+
+            return { ...options, ...extra };
+        }
+
+        function normalizeAppointmentFetchOptions(options = {}) {
+            return {
+                ...options,
+                startDate: normalizeDate(options.startDate || ''),
+                endDate: normalizeDate(options.endDate || ''),
+                professionalId: String(options.professionalId || options.profissional || '').trim(),
+                limit: options.limit || ((options.startDate || options.endDate) ? 2000 : 1000),
+                force: options.force === true,
+                renderActiveView: options.renderActiveView === true
+            };
+        }
+
+        function getAppointmentFetchKey(options = {}) {
+            const normalized = normalizeAppointmentFetchOptions(options);
+            return [
+                normalized.startDate || '*',
+                normalized.endDate || '*',
+                normalized.professionalId || '*',
+                normalized.limit || '*'
+            ].join('|');
+        }
+
+        function buildAppointmentsApiPath(options = {}) {
+            const normalized = normalizeAppointmentFetchOptions(options);
+            const params = new URLSearchParams();
+            if (normalized.force) params.set('force', '1');
+            if (normalized.startDate) params.set('start_date', normalized.startDate);
+            if (normalized.endDate) params.set('end_date', normalized.endDate);
+            if (normalized.professionalId) params.set('profissional', normalized.professionalId);
+            if (normalized.limit) params.set('limit', String(normalized.limit));
+            const query = params.toString();
+            return `/api/agendamentos${query ? `?${query}` : ''}`;
+        }
+
+        function isAppointmentInFetchScope(appointment, options = {}) {
+            const normalized = normalizeAppointmentFetchOptions(options);
+            const item = normalizeAppointmentRecord(appointment || {});
+            if (normalized.startDate && item.date < normalized.startDate) return false;
+            if (normalized.endDate && item.date > normalized.endDate) return false;
+            if (normalized.professionalId && String(item.professionalId) !== String(normalized.professionalId)) return false;
+            return true;
+        }
+
+        function getAppointmentsInFetchScope(items, options = {}) {
+            return (items || []).filter(item => isAppointmentInFetchScope(item, options));
+        }
+
+        function ensureAppointmentsWindowLoaded(options = {}) {
+            const fetchOptions = normalizeAppointmentFetchOptions(options);
+            const cacheKey = getAppointmentFetchKey(fetchOptions);
+            if (!fetchOptions.force && appointmentWindowCache.has(cacheKey)) {
+                return Promise.resolve(appointments);
+            }
+            return fetchAppointmentsFromServer({
+                ...fetchOptions,
+                renderActiveView: false
+            }).then(result => {
+                if (result) {
+                    appointmentWindowCache.add(cacheKey);
+                }
+                return result;
+            });
+        }
+
         function syncAppointmentsForAgendaView(options = {}) {
-            if (agendaSyncInFlight) {
+            const fetchOptions = getCurrentAgendaAppointmentFetchOptions({
+                force: options.force === true,
+                renderActiveView: true
+            });
+            const syncKey = `${getAppointmentFetchKey(fetchOptions)}|force:${fetchOptions.force ? '1' : '0'}`;
+            if (agendaSyncInFlight && agendaSyncInFlightKey === syncKey) {
                 return agendaSyncInFlight;
             }
 
-            agendaSyncInFlight = fetchAppointmentsFromServer({
-                force: options.force === true,
-                renderActiveView: true
-            }).finally(() => {
+            agendaSyncInFlightKey = syncKey;
+            agendaSyncInFlight = fetchAppointmentsFromServer(fetchOptions).finally(() => {
                 agendaSyncInFlight = null;
+                agendaSyncInFlightKey = '';
             });
 
             return agendaSyncInFlight;
@@ -1278,7 +1385,7 @@
                 fetchProfessionalsFromServer(),
                 fetchRoomsFromServer(),
                 fetchPatientsFromServer(),
-                fetchAppointmentsFromServer(),
+                fetchAppointmentsFromServer(getCurrentAgendaAppointmentFetchOptions()),
                 fetchRemarkConfigFromServer(),
                 fetchRemarkRequestsFromServer(),
                 fetchWaitlistFromServer()
@@ -1518,9 +1625,10 @@
                     return;
                 }
 
+                const agendaFetchOptions = getCurrentAgendaAppointmentFetchOptions({ force: true });
                 const [profRes, aptRes] = await Promise.all([
                     fetch(apiUrl('/api/profissionais')),
-                    fetch(apiUrl('/api/agendamentos?force=1'))
+                    fetch(apiUrl(buildAppointmentsApiPath(agendaFetchOptions)))
                 ]);
                 lastFullServerCheckAt = now;
 
@@ -1531,7 +1639,8 @@
                 const serverAppointments = Array.isArray(aptData.agendamentos) ? aptData.agendamentos : [];
 
                 const hasProfessionalChanges = areProfessionalsDifferent(professionals, serverProfessionals);
-                const hasAppointmentChanges = areAppointmentsDifferent(appointments, serverAppointments);
+                const localAppointmentsInScope = getAppointmentsInFetchScope(appointments, agendaFetchOptions);
+                const hasAppointmentChanges = areAppointmentsDifferent(localAppointmentsInScope, serverAppointments);
 
                 if (hasProfessionalChanges || hasAppointmentChanges) {
                     debugLog('[checkServerUpdates] Novas alterações detectadas no servidor.', { hasProfessionalChanges, hasAppointmentChanges });
@@ -1550,7 +1659,7 @@
             await fetchProfessionalsFromServer();
             await fetchRoomsFromServer();
             await fetchPatientsFromServer();
-            await fetchAppointmentsFromServer({ force: true });
+            await fetchAppointmentsFromServer(getCurrentAgendaAppointmentFetchOptions({ force: true }));
             await fetchRemarkConfigFromServer();
             await fetchRemarkRequestsFromServer({ force: true });
             await fetchWaitlistFromServer({ force: true });
@@ -4653,7 +4762,7 @@
             document.getElementById('roomsAvailabilityModal').classList.add('active');
             await ensureRoomsLoaded();
             renderRoomsAvailability();
-            fetchAppointmentsFromServer()
+            fetchAppointmentsFromServer(getWeekAppointmentFetchOptions(roomsAvailabilityWeek))
                 .then(() => renderRoomsAvailability())
                 .catch(() => {});
         }
@@ -4661,25 +4770,37 @@
         function previousRoomsAvailabilityWeek() {
             roomsAvailabilityWeek = new Date(roomsAvailabilityWeek.getTime() - 7 * 24 * 60 * 60 * 1000);
             renderRoomsAvailability();
+            fetchAppointmentsFromServer(getWeekAppointmentFetchOptions(roomsAvailabilityWeek))
+                .then(() => renderRoomsAvailability())
+                .catch(() => {});
         }
 
         function nextRoomsAvailabilityWeek() {
             roomsAvailabilityWeek = new Date(roomsAvailabilityWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
             renderRoomsAvailability();
+            fetchAppointmentsFromServer(getWeekAppointmentFetchOptions(roomsAvailabilityWeek))
+                .then(() => renderRoomsAvailability())
+                .catch(() => {});
         }
 
         function goToCurrentRoomsAvailabilityWeek() {
             roomsAvailabilityWeek = new Date();
             renderRoomsAvailability();
+            fetchAppointmentsFromServer(getWeekAppointmentFetchOptions(roomsAvailabilityWeek))
+                .then(() => renderRoomsAvailability())
+                .catch(() => {});
         }
 
         // Fetch appointments from server and merge into local cache
         function fetchAppointmentsFromServer(options = {}) {
-            debugLog('[fetchAppointmentsFromServer] Starting sync from server...');
-            const url = options.force
-                ? apiUrl('/api/agendamentos?force=1')
-                : apiUrl('/api/agendamentos');
-            return fetch(url)
+            const fetchOptions = normalizeAppointmentFetchOptions(options);
+            debugLog('[fetchAppointmentsFromServer] Starting sync from server...', fetchOptions);
+            const url = apiUrl(buildAppointmentsApiPath(fetchOptions));
+            return fetch(url, {
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin',
+                    cache: fetchOptions.force ? 'no-store' : 'default'
+                })
                 .then(res => res.json())
                 .then(data => {
                     debugLog('[fetchAppointmentsFromServer] Server response received:', data && data.agendamentos ? data.agendamentos.length : 0, 'appointments');
@@ -4687,6 +4808,8 @@
                         let changed = false;
                         let added = 0;
                         let updated = 0;
+                        let removed = 0;
+                        const serverIds = new Set(data.agendamentos.map(a => String(a.id || '').trim()).filter(Boolean));
 
                         const appointmentFields = [
                             'id', 'professionalId', 'patientId', 'date', 'time', 'endTime',
@@ -4820,16 +4943,33 @@
                             }
                         });
 
-                        debugLog(`[fetchAppointmentsFromServer] Sync complete: added=${added}, updated=${updated}, total=${appointments.length}`);
+                        if (fetchOptions.startDate || fetchOptions.endDate || fetchOptions.professionalId) {
+                            const beforeRemoval = appointments.length;
+                            appointments = appointments.filter(apt => {
+                                if (apt && apt.syncStatus === 'pending') return true;
+                                if (!isAppointmentInFetchScope(apt, fetchOptions)) return true;
+                                const id = String(apt.id || '').trim();
+                                return id && serverIds.has(id);
+                            });
+                            removed = beforeRemoval - appointments.length;
+                            if (removed > 0) {
+                                changed = true;
+                            }
+                        }
+
+                        appointmentWindowCache.add(getAppointmentFetchKey(fetchOptions));
+                        debugLog(`[fetchAppointmentsFromServer] Sync complete: added=${added}, updated=${updated}, removed=${removed}, total=${appointments.length}`);
                         if (changed) {
                             localStorage.setItem('appointments', JSON.stringify(appointments));
                             debugLog('[fetchAppointmentsFromServer] Reloading active schedule view');
                             refreshActiveScheduleViews();
-                        } else if (options.renderActiveView) {
+                        } else if (fetchOptions.renderActiveView) {
                             debugLog('[fetchAppointmentsFromServer] Refreshing active schedule view after sync');
                             refreshActiveScheduleViews();
                         }
+                        return appointments;
                     }
+                    return null;
                 })
                 .catch(err => {
                     console.warn('Não foi possível sincronizar agendamentos com o servidor:', err);
@@ -4968,6 +5108,7 @@
             scheduleMiniCalendarOpen = false;
             setMiniCalendarMonthFromCurrentWeek();
             refreshActiveScheduleViews();
+            syncAppointmentsForAgendaView();
         }
 
         function loadScheduleGrid() {
@@ -7030,7 +7171,7 @@
                         return;
                     }
 
-                    fetchAppointmentsFromServer();
+                    syncAppointmentsForAgendaView({ force: true });
                     debugLog('Status atualizado no servidor:', data);
                 })
                 .catch(err => {
@@ -7103,7 +7244,7 @@
                         return;
                     }
 
-                    fetchAppointmentsFromServer();
+                    syncAppointmentsForAgendaView({ force: true });
                     showAppointmentActionOptions(appointment);
                     showSuccessMessage('âœ… Agendamento liberado para alteraÃ§Ã£o por outros usuÃ¡rios.');
                 })
@@ -7326,7 +7467,7 @@
                     ));
                     localStorage.setItem('appointments', JSON.stringify(appointments));
                     refreshActiveScheduleViews();
-                    fetchAppointmentsFromServer({ force: true }).catch(err => {
+                    syncAppointmentsForAgendaView({ force: true }).catch(err => {
                         console.warn('Nao foi possivel atualizar agenda apos recorrencia:', err);
                     });
                 }
@@ -7343,7 +7484,7 @@
                 refreshActiveScheduleViews();
                 showErrorMessage(`Nao foi possivel salvar as repeticoes no banco. ${err.message || ''}`);
                 setTimeout(() => {
-                    fetchAppointmentsFromServer({ force: true }).catch(() => {});
+                    syncAppointmentsForAgendaView({ force: true }).catch(() => {});
                 }, 1000);
             });
         }
@@ -10448,6 +10589,58 @@
             ) || null;
         }
 
+        function ensureRemarkAppointmentWindowLoaded(appointment, dateValue, force = false) {
+            if (!appointment || !appointment.professionalId || !dateValue) {
+                return Promise.resolve(null);
+            }
+            return ensureAppointmentsWindowLoaded({
+                startDate: dateValue,
+                endDate: dateValue,
+                professionalId: appointment.professionalId,
+                limit: 500,
+                force
+            });
+        }
+
+        function scheduleRemarkConflictServerCheck(appointment, dateValue) {
+            if (!appointment || !dateValue) return;
+            const key = `${appointment.professionalId}|${dateValue}`;
+            if (remarkConflictFetchKey === key) return;
+            remarkConflictFetchKey = key;
+            if (remarkConflictFetchTimer) {
+                clearTimeout(remarkConflictFetchTimer);
+            }
+            remarkConflictFetchTimer = setTimeout(() => {
+                ensureRemarkAppointmentWindowLoaded(appointment, dateValue)
+                    .then(() => {
+                        remarkConflictFetchKey = '';
+                        checkRemarkTargetConflict({ skipServer: true });
+                    })
+                    .catch(() => {
+                        remarkConflictFetchKey = '';
+                    });
+            }, 250);
+        }
+
+        async function checkRemarkTargetConflictWithServer() {
+            const appointment = getAppointmentById(document.getElementById('remarkAppointmentId')?.value);
+            const newDate = document.getElementById('remarkNewDate')?.value;
+            const newTime = document.getElementById('remarkNewTime')?.value;
+            const newEndTime = document.getElementById('remarkNewEndTime')?.value;
+            if (appointment && newDate && isValidTime(newTime) && isValidTime(newEndTime)) {
+                await ensureRemarkAppointmentWindowLoaded(appointment, newDate);
+            }
+            return checkRemarkTargetConflict({ skipServer: true });
+        }
+
+        async function hydrateRemarkRelocationWindows(appointment, relocations) {
+            if (!appointment || !Array.isArray(relocations) || !relocations.length) return;
+            const dates = [...new Set(relocations
+                .map(item => item && item.newDate)
+                .filter(dateValue => dateValue && /^\d{4}-\d{2}-\d{2}$/.test(String(dateValue))))];
+            await Promise.all(dates.map(dateValue => ensureRemarkAppointmentWindowLoaded(appointment, dateValue)));
+        }
+
         function isAppointmentUsingRoom(appointment) {
             const status = normalizeScheduleStatus(appointment.status || 'agendado');
             return !['cancelado_profissional', 'cancelado_paciente', 'faltou'].includes(status);
@@ -10711,7 +10904,7 @@
             document.getElementById('remarkRequestModal').classList.add('active');
         }
 
-        function checkRemarkTargetConflict() {
+        function checkRemarkTargetConflict(options = {}) {
             const appointment = getAppointmentById(document.getElementById('remarkAppointmentId')?.value);
             const newDate = document.getElementById('remarkNewDate')?.value;
             const newTime = document.getElementById('remarkNewTime')?.value;
@@ -10726,6 +10919,9 @@
             const conflict = findRemarkTargetConflict(appointment, newDate, newTime, newEndTime);
 
             if (!warning || !invertWrapper || !conflictInput) return null;
+            if (!options.skipServer && appointment && newDate && isValidTime(newTime) && isValidTime(newEndTime)) {
+                scheduleRemarkConflictServerCheck(appointment, newDate);
+            }
 
             if (!conflict) {
                 warning.classList.add('hidden');
@@ -10791,11 +10987,11 @@
             const newEndTime = document.getElementById('remarkNewEndTime').value;
             const reason = document.getElementById('remarkReason').value.trim();
             const invertTimes = document.getElementById('remarkInvertTimes').checked;
-            const conflict = checkRemarkTargetConflict();
+            let conflict = await checkRemarkTargetConflictWithServer();
             const conflictNewDate = document.getElementById('remarkConflictNewDate')?.value || '';
             const conflictNewTime = document.getElementById('remarkConflictNewTime')?.value || '';
             const conflictNewEndTime = document.getElementById('remarkConflictNewEndTime')?.value || '';
-            const conflictRelocations = conflict && !invertTimes ? buildRemarkConflictRelocations(appointment, conflict) : [];
+            let conflictRelocations = conflict && !invertTimes ? buildRemarkConflictRelocations(appointment, conflict) : [];
 
             if (!appointment || !newDate || !isValidTime(newTime) || !isValidTime(newEndTime)) {
                 alert('Informe nova data, horário de início e horário de término válidos.');
@@ -10815,6 +11011,9 @@
                 return;
             }
             if (conflict && !invertTimes) {
+                await hydrateRemarkRelocationWindows(appointment, conflictRelocations);
+                conflict = checkRemarkTargetConflict({ skipServer: true });
+                conflictRelocations = conflict ? buildRemarkConflictRelocations(appointment, conflict) : [];
                 const overflow = conflictRelocations.find(item => item.overflow);
                 if (overflow) {
                     alert(`O terceiro destino ainda encontra ${overflow.clientName || 'outro paciente'}. Escolha outro destino para o terceiro ou solicite estes ajustes em etapas e aguarde o retorno antes de continuar.`);
@@ -11106,7 +11305,23 @@
                     request.decidedBySector = data.decidido_por_setor || getRemarkDecisionSectorFallback();
                     request.approvedAt = new Date().toISOString();
                     saveRemarkRequests();
-                    await fetchAppointmentsFromServer();
+                    await Promise.allSettled([
+                        fetchAppointmentsFromServer(getCurrentAgendaAppointmentFetchOptions({ force: true })),
+                        ensureAppointmentsWindowLoaded({
+                            startDate: request.originalDate,
+                            endDate: request.originalDate,
+                            professionalId: request.professionalId,
+                            limit: 500,
+                            force: true
+                        }),
+                        ensureAppointmentsWindowLoaded({
+                            startDate: request.newDate,
+                            endDate: request.newDate,
+                            professionalId: request.professionalId,
+                            limit: 500,
+                            force: true
+                        })
+                    ]);
                     await fetchRemarkRequestsFromServer({ force: true });
                     refreshActiveScheduleViews();
                     remarkDecisionInFlight.delete(requestKey);
@@ -11429,7 +11644,7 @@
             // Recarregar dados do servidor para confirmar sincronização
             if (serverSuccess) {
                 showLoading('Sincronizando', 'Atualizando dados...');
-                await fetchAppointmentsFromServer();
+                await syncAppointmentsForAgendaView({ force: true });
                 hideLoading();
             }
             
@@ -12262,7 +12477,7 @@
             closeBulkDeleteConfirmModal();
             closeModal('bulkCancelModal');
             if (serverSuccess) {
-                await fetchAppointmentsFromServer();
+                await syncAppointmentsForAgendaView({ force: true });
                 showSuccessMessage(`Excluidos ${deletedCount} agendamentos no sistema e no banco de dados!`);
                 return;
             }
@@ -12330,7 +12545,7 @@
                 filterBulkAppointments();
                 closeModal('bulkCancelModal');
                 if (serverSuccess) {
-                    await fetchAppointmentsFromServer();
+                    await syncAppointmentsForAgendaView({ force: true });
                     showSuccessMessage(`Excluidos ${deletedCount} agendamentos no sistema e no banco de dados!`);
                     return;
                 }
@@ -13645,6 +13860,7 @@ function previousWeek() {
     setMiniCalendarMonthFromCurrentWeek();
     debugLog('[previousWeek] currentWeek after:', currentWeek);
     refreshActiveScheduleViews();
+    syncAppointmentsForAgendaView();
 }
 
 function nextWeek() {
@@ -13654,12 +13870,14 @@ function nextWeek() {
     setMiniCalendarMonthFromCurrentWeek();
     debugLog('[nextWeek] currentWeek after:', currentWeek);
     refreshActiveScheduleViews();
+    syncAppointmentsForAgendaView();
 }
 
 function goToCurrentWeek() {
     currentWeek = new Date();
     setMiniCalendarMonthFromCurrentWeek();
     refreshActiveScheduleViews();
+    syncAppointmentsForAgendaView();
 }
 
 window.applyAgendaFilters = applyAgendaFilters;
