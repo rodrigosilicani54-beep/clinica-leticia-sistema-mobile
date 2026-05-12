@@ -472,24 +472,8 @@
         function getCurrentActionCenterFavorites() {
             const normalized = normalizeUserPreferences(currentUser?.preferences || null, currentUser?.level || 'viewer');
             const knownActions = actionCenterState ? actionCenterState.actionsById : {};
-            const favorites = (normalized.ui.actionCenter.favorites || [])
+            return (normalized.ui.actionCenter.favorites || [])
                 .filter(id => knownActions[id]);
-            const fallback = defaultActionCenterFavorites.filter(id => knownActions[id]);
-            return favorites.length ? favorites : fallback;
-        }
-
-        function createActionEditButton(label, onClick, disabled = false) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'action-edit-button';
-            button.textContent = label;
-            button.disabled = disabled;
-            button.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (!disabled) onClick();
-            });
-            return button;
         }
 
         function createActionEntry(actionId, context, visibleIds, index) {
@@ -497,22 +481,14 @@
             if (!action) return null;
 
             const item = document.createElement('div');
-            item.className = `action-item${actionCenterState.customizing ? ' editing' : ''}`;
+            item.className = 'action-item';
             item.dataset.actionId = actionId;
+            item.dataset.actionContext = context;
+            item.draggable = true;
+            item.title = context === 'favorite' ? 'Arraste para reorganizar' : 'Arraste para favoritos';
+            item.addEventListener('dragstart', handleActionDragStart);
+            item.addEventListener('dragend', handleActionDragEnd);
             item.appendChild(action.button);
-
-            if (actionCenterState.customizing && actionId !== 'home') {
-                const tools = document.createElement('div');
-                tools.className = 'action-edit-tools';
-                if (context === 'favorite') {
-                    tools.appendChild(createActionEditButton('Subir', () => moveActionFavorite(actionId, -1), index <= 0));
-                    tools.appendChild(createActionEditButton('Descer', () => moveActionFavorite(actionId, 1), index >= visibleIds.length - 1));
-                    tools.appendChild(createActionEditButton('Remover favorito', () => toggleActionFavorite(actionId)));
-                } else {
-                    tools.appendChild(createActionEditButton('Favoritar', () => toggleActionFavorite(actionId)));
-                }
-                item.appendChild(tools);
-            }
 
             return item;
         }
@@ -526,6 +502,115 @@
             });
         }
 
+        function clearActionDragClasses() {
+            if (!actionCenterState) return;
+            actionCenterState.primaryRow.classList.remove('drag-over');
+            actionCenterState.folderRow.classList.remove('drag-remove-target');
+            actionCenterState.shell.querySelectorAll('.action-item.is-dragging').forEach((item) => {
+                item.classList.remove('is-dragging');
+            });
+        }
+
+        function closeActionFolders() {
+            if (!actionCenterState) return;
+            Array.from(actionCenterState.folderRow.querySelectorAll('.action-folder')).forEach((folder) => {
+                folder.removeAttribute('open');
+            });
+        }
+
+        function getActionDropIndex(event) {
+            if (!actionCenterState) return 0;
+            const draggingId = actionCenterState.draggingActionId;
+            const items = Array.from(actionCenterState.primaryRow.querySelectorAll('.action-item'))
+                .filter(item => item.dataset.actionId && item.dataset.actionId !== draggingId && item.style.display !== 'none');
+            const targetItem = event.target.closest('.action-item');
+            if (!targetItem || !actionCenterState.primaryRow.contains(targetItem)) {
+                return items.length;
+            }
+            if (targetItem.dataset.actionId === draggingId) {
+                return getCurrentActionCenterFavorites().indexOf(draggingId);
+            }
+
+            const targetId = targetItem.dataset.actionId;
+            const targetIndex = items.findIndex(item => item.dataset.actionId === targetId);
+            if (targetIndex < 0) return items.length;
+
+            const box = targetItem.getBoundingClientRect();
+            const horizontalDrop = event.clientX > box.left + (box.width / 2);
+            return targetIndex + (horizontalDrop ? 1 : 0);
+        }
+
+        function saveDroppedActionFavorite(actionId, dropIndex) {
+            if (!actionCenterState || !actionId || !actionCenterState.actionsById[actionId]) return;
+            const currentFavorites = getCurrentActionCenterFavorites();
+            const nextFavorites = currentFavorites.filter(id => id !== actionId);
+            const boundedIndex = Math.max(0, Math.min(dropIndex, nextFavorites.length));
+            nextFavorites.splice(boundedIndex, 0, actionId);
+
+            const changed = nextFavorites.length !== currentFavorites.length ||
+                nextFavorites.some((id, index) => id !== currentFavorites[index]);
+            if (changed) {
+                saveActionCenterFavorites(nextFavorites);
+            }
+        }
+
+        function handleActionDragStart(event) {
+            if (!actionCenterState) return;
+            const item = event.currentTarget;
+            const actionId = item.dataset.actionId;
+            if (!actionId) return;
+
+            actionCenterState.draggingActionId = actionId;
+            item.classList.add('is-dragging');
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', actionId);
+            }
+        }
+
+        function handleActionDragEnd() {
+            if (!actionCenterState) return;
+            actionCenterState.draggingActionId = null;
+            clearActionDragClasses();
+        }
+
+        function handleActionPrimaryDragOver(event) {
+            if (!actionCenterState || !actionCenterState.draggingActionId) return;
+            event.preventDefault();
+            actionCenterState.primaryRow.classList.add('drag-over');
+            actionCenterState.folderRow.classList.remove('drag-remove-target');
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleActionPrimaryDrop(event) {
+            if (!actionCenterState || !actionCenterState.draggingActionId) return;
+            event.preventDefault();
+            const actionId = actionCenterState.draggingActionId;
+            const dropIndex = getActionDropIndex(event);
+            saveDroppedActionFavorite(actionId, dropIndex);
+            closeActionFolders();
+            clearActionDragClasses();
+        }
+
+        function handleActionFolderDragOver(event) {
+            if (!actionCenterState || !actionCenterState.draggingActionId) return;
+            const favorites = getCurrentActionCenterFavorites();
+            if (!favorites.includes(actionCenterState.draggingActionId)) return;
+            event.preventDefault();
+            actionCenterState.folderRow.classList.add('drag-remove-target');
+            actionCenterState.primaryRow.classList.remove('drag-over');
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleActionFolderDrop(event) {
+            if (!actionCenterState || !actionCenterState.draggingActionId) return;
+            const favorites = getCurrentActionCenterFavorites();
+            if (!favorites.includes(actionCenterState.draggingActionId)) return;
+            event.preventDefault();
+            saveActionCenterFavorites(favorites.filter(id => id !== actionCenterState.draggingActionId));
+            clearActionDragClasses();
+        }
+
         function renderActionCenterLayout() {
             if (!actionCenterState) return;
 
@@ -536,14 +621,7 @@
 
             const subtitle = actionCenterState.shell.querySelector('[data-action-subtitle]');
             if (subtitle) {
-                subtitle.textContent = actionCenterState.customizing
-                    ? 'Favoritos ficam na primeira linha. Use Subir/Descer para ordenar.'
-                    : 'Atalhos favoritos primeiro; o restante fica organizado por pastas.';
-            }
-
-            const customizeButton = actionCenterState.shell.querySelector('[data-action-customize]');
-            if (customizeButton) {
-                customizeButton.textContent = actionCenterState.customizing ? 'Concluir' : 'Personalizar';
+                subtitle.textContent = 'Favoritos do usuario.';
             }
 
             favorites.forEach((actionId, index) => {
@@ -580,12 +658,6 @@
             }
         }
 
-        function toggleActionCenterCustomization() {
-            if (!currentUser) return;
-            actionCenterState.customizing = !actionCenterState.customizing;
-            renderActionCenterLayout();
-        }
-
         function saveActionCenterFavorites(favorites) {
             if (!currentUser) return;
             const normalized = normalizeUserPreferences(currentUser.preferences || null, currentUser.level);
@@ -618,25 +690,6 @@
                 console.error('Erro ao salvar personalizacao:', err);
                 alert('Nao foi possivel salvar a personalizacao no servidor.');
             });
-        }
-
-        function toggleActionFavorite(actionId) {
-            const favorites = getCurrentActionCenterFavorites();
-            const nextFavorites = favorites.includes(actionId)
-                ? favorites.filter(id => id !== actionId)
-                : [...favorites, actionId];
-            saveActionCenterFavorites(nextFavorites);
-        }
-
-        function moveActionFavorite(actionId, direction) {
-            const favorites = getCurrentActionCenterFavorites();
-            const currentIndex = favorites.indexOf(actionId);
-            const nextIndex = currentIndex + direction;
-            if (currentIndex < 0 || nextIndex < 0 || nextIndex >= favorites.length) return;
-            const nextFavorites = [...favorites];
-            const [item] = nextFavorites.splice(currentIndex, 1);
-            nextFavorites.splice(nextIndex, 0, item);
-            saveActionCenterFavorites(nextFavorites);
         }
 
         function organizeActionCenter() {
@@ -722,19 +775,32 @@
                 <div class="action-center-heading">
                     <div class="action-center-title">
                         <strong>Central de acoes</strong>
-                        <span data-action-subtitle>Atalhos favoritos primeiro; o restante fica organizado por pastas.</span>
+                        <span data-action-subtitle>Favoritos do usuario.</span>
                     </div>
-                    <button type="button" class="action-customize-button" data-action-customize onclick="toggleActionCenterCustomization()">Personalizar</button>
                 </div>
             `;
 
             const primaryRow = document.createElement('div');
             primaryRow.className = 'action-primary-row';
+            primaryRow.addEventListener('dragover', handleActionPrimaryDragOver);
+            primaryRow.addEventListener('drop', handleActionPrimaryDrop);
+            primaryRow.addEventListener('dragleave', (event) => {
+                if (!primaryRow.contains(event.relatedTarget)) {
+                    primaryRow.classList.remove('drag-over');
+                }
+            });
             top.appendChild(primaryRow);
             shell.appendChild(top);
 
             const folderRow = document.createElement('div');
             folderRow.className = 'action-folder-row';
+            folderRow.addEventListener('dragover', handleActionFolderDragOver);
+            folderRow.addEventListener('drop', handleActionFolderDrop);
+            folderRow.addEventListener('dragleave', (event) => {
+                if (!folderRow.contains(event.relatedTarget)) {
+                    folderRow.classList.remove('drag-remove-target');
+                }
+            });
             shell.appendChild(folderRow);
 
             let legendDetails = null;
@@ -763,7 +829,7 @@
                 folderRow,
                 legendDetails,
                 actionsById,
-                customizing: false,
+                draggingActionId: null,
                 groups: [
                     { label: 'Cadastros', ids: ['professionals', 'newProfessional', 'newPatient', 'patients'] },
                     { label: 'Agenda', ids: ['weekly', 'daily', 'schedule', 'waitlist', 'bulk', 'rooms', 'smartRescheduling', 'remarkRequests', 'notifications'] },

@@ -1436,8 +1436,17 @@ def normalize_user_preferences(preferences=None, level=None):
     if not isinstance(action_center_payload, dict):
         action_center_payload = {}
 
+    if 'favorites' in action_center_payload:
+        raw_favorites = action_center_payload.get('favorites')
+    elif 'favoritos' in action_center_payload:
+        raw_favorites = action_center_payload.get('favoritos')
+    else:
+        raw_favorites = DEFAULT_ACTION_CENTER_FAVORITES
+    if not isinstance(raw_favorites, list):
+        raw_favorites = DEFAULT_ACTION_CENTER_FAVORITES
+
     favorites = []
-    for item in action_center_payload.get('favorites') or action_center_payload.get('favoritos') or DEFAULT_ACTION_CENTER_FAVORITES:
+    for item in raw_favorites:
         text = str(item or '').strip()
         if text and text not in favorites:
             favorites.append(text)

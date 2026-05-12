@@ -123,39 +123,36 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            cursor: grab;
+            touch-action: manipulation;
         }
-        .action-item.editing {
-            align-items: stretch;
-            padding: 4px;
-            border: 1px dashed #cbd5e1;
+        .action-item.is-dragging {
+            cursor: grabbing;
+            opacity: 0.55;
+        }
+        .action-item .action-button {
+            cursor: inherit;
+            user-select: none;
+        }
+        .action-primary-row {
+            min-height: 42px;
+            padding: 2px;
             border-radius: 10px;
+            transition: background-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .action-primary-row.drag-over {
+            background: #ecfdf5;
+            box-shadow: inset 0 0 0 1px #86efac;
+        }
+        .action-folder-row {
+            min-height: 40px;
+            padding: 2px;
+            border-radius: 10px;
+            transition: background-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .action-folder-row.drag-remove-target {
             background: #f8fafc;
-        }
-        .action-edit-tools {
-            display: inline-flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            align-items: center;
-        }
-        .action-edit-button,
-        .action-customize-button {
-            border: 1px solid #cbd5e1;
-            border-radius: 7px;
-            background: #ffffff;
-            color: #334155;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 1;
-            padding: 8px 9px;
-        }
-        .action-edit-button:hover,
-        .action-customize-button:hover {
-            background: #f1f5f9;
-            border-color: #94a3b8;
-        }
-        .action-edit-button:disabled {
-            cursor: not-allowed;
-            opacity: 0.45;
+            box-shadow: inset 0 0 0 1px #cbd5e1;
         }
         .action-button,
         .action-folder > summary {
@@ -289,13 +286,11 @@
                 align-items: stretch;
             }
             .action-center-heading,
-            .action-item,
-            .action-edit-tools {
+            .action-item {
                 width: 100%;
             }
             .action-button,
-            .action-folder > summary,
-            .action-customize-button {
+            .action-folder > summary {
                 width: 100%;
                 justify-content: center;
                 text-align: center;
