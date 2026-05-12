@@ -243,7 +243,8 @@
 
             return new Promise(resolve => {
                 const overlay = document.createElement('div');
-                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4';
+                overlay.style.zIndex = '100000';
 
                 const panel = document.createElement('div');
                 panel.className = 'bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4';
@@ -5879,6 +5880,41 @@
             return total > loadedCount ? total : loadedCount;
         }
 
+        async function fetchAppointmentRecurrenceInfo(appointment) {
+            const numericId = Number(appointment?.id);
+            if (Number.isNaN(numericId) || numericId <= 0) {
+                return null;
+            }
+            try {
+                const response = await fetch(apiUrl(`/api/agendamentos/${numericId}/recorrencia?_=${Date.now()}`), {
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
+                const data = await response.json();
+                return data && data.success ? data : null;
+            } catch (err) {
+                console.warn('Nao foi possivel consultar recorrencia do agendamento:', err);
+                return null;
+            }
+        }
+
+        function getRecurrenceScopeCount(recurrenceInfo, scope, fallbackCount = 1) {
+            const scopeInfo = recurrenceInfo?.scopes?.[scope];
+            const count = Number(scopeInfo?.count ?? 0);
+            if (count > 0) return count;
+            if (Array.isArray(scopeInfo?.ids) && scopeInfo.ids.length) return scopeInfo.ids.length;
+            return fallbackCount || 1;
+        }
+
+        function getRecurrenceScopeIds(appointment, scope, recurrenceInfo = null) {
+            const serverIds = recurrenceInfo?.scopes?.[scope]?.ids;
+            if (Array.isArray(serverIds) && serverIds.length) {
+                return serverIds.map(id => String(id));
+            }
+            return getLocalRecurrenceTargets(appointment, scope).map(item => String(item.id));
+        }
+
         function shouldOfferRecurrenceScope(appointment) {
             if (!getAppointmentRecurrenceGroupId(appointment)) return false;
             const loadedSiblings = getRecurrenceSiblings(appointment);
@@ -5912,22 +5948,33 @@
         }
 
         async function chooseRecurringAppointmentScope(appointment, actionLabel, danger = false) {
-            if (!shouldOfferRecurrenceScope(appointment)) {
-                return 'single';
-            }
-
+            const recurrenceInfo = await fetchAppointmentRecurrenceInfo(appointment);
             const loadedSiblings = getRecurrenceSiblings(appointment);
             const loadedTotal = loadedSiblings.length || 1;
-            const serverTotal = getAppointmentRecurrenceTotal(appointment, loadedTotal);
-            const weekday = getAppointmentWeekday(appointment);
+            const serverTotal = getRecurrenceScopeCount(
+                recurrenceInfo,
+                'all',
+                getAppointmentRecurrenceTotal(appointment, loadedTotal)
+            );
+            if (serverTotal <= 1 && !shouldOfferRecurrenceScope(appointment)) {
+                return { scope: 'single', recurrenceInfo };
+            }
+
+            const weekday = recurrenceInfo?.selected_weekday ?? getAppointmentWeekday(appointment);
             const weekdayLabels = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
             const weekdayLabel = weekdayLabels[weekday] || 'mesmo dia';
-            const sameWeekdayCount = getLocalRecurrenceTargets(appointment, 'weekday').length;
-            const countHint = serverTotal > loadedTotal
-                ? `O servidor tambem considera repeticoes que nao estao carregadas nesta tela.`
-                : `Repeticoes carregadas nesta tela: ${loadedTotal}.`;
+            const sameWeekdayCount = getRecurrenceScopeCount(
+                recurrenceInfo,
+                'weekday',
+                getLocalRecurrenceTargets(appointment, 'weekday').length
+            );
+            const countHint = recurrenceInfo
+                ? `Serie no servidor: ${serverTotal} agendamento(s).`
+                : serverTotal > loadedTotal
+                    ? `O servidor tambem considera repeticoes que nao estao carregadas nesta tela.`
+                    : `Repeticoes carregadas nesta tela: ${loadedTotal}.`;
 
-            return showChoiceConfirm({
+            const selectedScope = await showChoiceConfirm({
                 title: `${actionLabel} repeticoes`,
                 message: `Este agendamento faz parte de uma serie.\nEscolha onde aplicar.\n\n${countHint}`,
                 choices: [
@@ -5939,7 +5986,9 @@
                     {
                         value: 'weekday',
                         label: `Mesmo dia da semana (${weekdayLabel})`,
-                        description: `Aplica nas repeticoes de ${weekdayLabel}. Carregadas aqui: ${sameWeekdayCount}.`
+                        description: recurrenceInfo
+                            ? `Aplica em ${sameWeekdayCount} agendamento(s) de ${weekdayLabel} no servidor.`
+                            : `Aplica nas repeticoes de ${weekdayLabel}. Carregadas aqui: ${sameWeekdayCount}.`
                     },
                     {
                         value: 'all',
@@ -5951,6 +6000,10 @@
                     }
                 ]
             });
+            if (!selectedScope) {
+                return null;
+            }
+            return { scope: selectedScope, recurrenceInfo };
         }
 
         function applyAppointmentEditToLoadedTargets(nextAppointment, targetIds, scope = 'single') {
@@ -5980,6 +6033,7 @@
                 };
             });
             localStorage.setItem('appointments', JSON.stringify(appointments));
+            appointmentWindowCache.clear();
         }
 
         function buildLocalAppointmentFromServer(srv, fallback = {}) {
@@ -7846,18 +7900,18 @@
             let editRecurrenceTargetIds = appointmentId ? [appointmentId] : [];
             const existingAppointmentForScope = appointmentId ? appointments.find(a => String(a.id) === String(appointmentId)) : null;
             if (isEditing && hasRepeatableAppointmentChanges(existingAppointmentForScope, appointment)) {
-                editRecurrenceScope = await chooseRecurringAppointmentScope(existingAppointmentForScope, 'Salvar nas', false);
-                if (!editRecurrenceScope) {
+                const scopeChoice = await chooseRecurringAppointmentScope(existingAppointmentForScope, 'Salvar nas', false);
+                if (!scopeChoice) {
                     setAppointmentSavingState(false);
                     return;
                 }
+                editRecurrenceScope = scopeChoice.scope || 'single';
                 if (editRecurrenceScope !== 'single' && existingAppointmentForScope?.date !== appointment.date) {
                     alert('Para aplicar em varias repeticoes, mantenha a data deste agendamento. Se quiser mudar a data, escolha "So este agendamento".');
                     setAppointmentSavingState(false);
                     return;
                 }
-                editRecurrenceTargetIds = getLocalRecurrenceTargets(existingAppointmentForScope, editRecurrenceScope)
-                    .map(item => String(item.id));
+                editRecurrenceTargetIds = getRecurrenceScopeIds(existingAppointmentForScope, editRecurrenceScope, scopeChoice.recurrenceInfo);
             }
 
             const patientRoomConflict = findPatientRoomTimeConflict(appointment, editRecurrenceTargetIds);
@@ -8133,12 +8187,12 @@
                 return;
             }
 
-            const deleteScope = await chooseRecurringAppointmentScope(appointment, 'Excluir nas', true);
-            if (!deleteScope) {
+            const deleteChoice = await chooseRecurringAppointmentScope(appointment, 'Excluir nas', true);
+            if (!deleteChoice) {
                 return;
             }
-            const idsToRemove = getLocalRecurrenceTargets(appointment, deleteScope)
-                .map(item => String(item.id));
+            const deleteScope = deleteChoice.scope || 'single';
+            const idsToRemove = getRecurrenceScopeIds(appointment, deleteScope, deleteChoice.recurrenceInfo);
 
             const removeAppointmentsLocally = (serverDeletedIds = []) => {
                 const deletedIdSet = new Set(serverDeletedIds.map(id => String(id)));
@@ -8149,6 +8203,7 @@
                     return !idsToRemove.includes(String(item.id));
                 });
                 localStorage.setItem('appointments', JSON.stringify(appointments));
+                appointmentWindowCache.clear();
                 refreshActiveScheduleViews();
                 closeModal('scheduleModal');
             };
@@ -8180,6 +8235,9 @@
                     if (data && data.success) {
                         const serverDeletedIds = Array.isArray(data.deleted_ids) ? data.deleted_ids : [];
                         removeAppointmentsLocally(serverDeletedIds);
+                        syncAppointmentsForAgendaView({ force: true }).catch(err => {
+                            console.warn('Nao foi possivel sincronizar agenda apos exclusao:', err);
+                        });
                         const deletedCount = data.deleted || idsToRemove.length || 1;
                         showSuccessMessage(`${deletedCount} agendamento(s) excluido(s) com sucesso!`);
                     } else {

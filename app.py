@@ -5425,6 +5425,98 @@ def listar_agendamentos():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/agendamentos/<int:agendamento_id>/recorrencia', methods=['GET'])
+def obter_recorrencia_agendamento(agendamento_id):
+    auth_check = require_authenticated()
+    if auth_check:
+        return auth_check
+
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
+        ensure_agendamento_recurrence_columns(cur, appointment_cols)
+        conn.commit()
+
+        cur.execute(
+            """
+            SELECT id, recorrencia_grupo_id, data,
+                   EXTRACT(DOW FROM data::date)::int AS weekday
+            FROM agendamentos
+            WHERE id = %s
+            """,
+            (agendamento_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Agendamento nao encontrado'}), 404
+
+        recurrence_group_id = row[1]
+        selected_weekday = row[3]
+        single_scope = {'count': 1, 'ids': [agendamento_id]}
+        if not recurrence_group_id:
+            cur.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'has_recurrence': False,
+                'recorrencia_grupo_id': None,
+                'selected_weekday': selected_weekday,
+                'scopes': {
+                    'single': single_scope,
+                    'weekday': single_scope,
+                    'all': single_scope
+                }
+            })
+
+        cur.execute(
+            """
+            SELECT id, data, EXTRACT(DOW FROM data::date)::int AS weekday
+            FROM agendamentos
+            WHERE recorrencia_grupo_id = %s
+            ORDER BY data ASC, hora_inicio ASC, id ASC
+            """,
+            (recurrence_group_id,)
+        )
+        rows = cur.fetchall()
+        all_ids = [int(item[0]) for item in rows]
+        weekday_ids = [int(item[0]) for item in rows if item[2] == selected_weekday]
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'has_recurrence': len(all_ids) > 1,
+            'recorrencia_grupo_id': recurrence_group_id,
+            'selected_weekday': selected_weekday,
+            'scopes': {
+                'single': single_scope,
+                'weekday': {
+                    'count': len(weekday_ids) or 1,
+                    'ids': weekday_ids or [agendamento_id]
+                },
+                'all': {
+                    'count': len(all_ids) or 1,
+                    'ids': all_ids or [agendamento_id]
+                }
+            }
+        })
+    except Exception as e:
+        print('Erro ao consultar recorrencia do agendamento:', e)
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except:
+            pass
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/lista-espera/opcoes', methods=['GET'])
 def listar_lista_espera_opcoes():
     authenticated_user, auth_error = get_authenticated_user()
