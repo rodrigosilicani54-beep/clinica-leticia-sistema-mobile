@@ -353,6 +353,9 @@
             { key: 'canViewAudit', label: 'Auditoria' }
         ];
 
+        const defaultActionCenterFavorites = ['weekly', 'daily', 'schedule', 'waitlist'];
+        let actionCenterState = null;
+
         function getBasePermissionsForLevel(level) {
             const normalizedLevel = String(level || 'viewer').toLowerCase();
             return { ...(permissions[normalizedLevel] || permissions.viewer) };
@@ -371,7 +374,32 @@
                     : baseValue;
                 normalizedPermissions[option.key] = baseValue && rawValue;
             });
-            return { permissions: normalizedPermissions };
+
+            const rawUi = preferencesPayload && typeof preferencesPayload === 'object'
+                ? (preferencesPayload.ui || preferencesPayload.interface || {})
+                : {};
+            const rawActionCenter = rawUi && typeof rawUi === 'object'
+                ? (rawUi.actionCenter || rawUi.action_center || {})
+                : {};
+            const rawFavorites = Array.isArray(rawActionCenter.favorites)
+                ? rawActionCenter.favorites
+                : (Array.isArray(rawActionCenter.favoritos) ? rawActionCenter.favoritos : defaultActionCenterFavorites);
+            const favorites = [];
+            rawFavorites.forEach(item => {
+                const key = String(item || '').trim();
+                if (key && !favorites.includes(key)) {
+                    favorites.push(key);
+                }
+            });
+
+            return {
+                permissions: normalizedPermissions,
+                ui: {
+                    actionCenter: {
+                        favorites: favorites.slice(0, 24)
+                    }
+                }
+            };
         }
 
         function buildEffectiveUserPermissions(level, preferencesPayload) {
@@ -402,15 +430,16 @@
             }).join('');
         }
 
-        function collectUserPreferencesFromControls(containerId, level) {
+        function collectUserPreferencesFromControls(containerId, level, existingPreferencesPayload = null) {
             const container = document.getElementById(containerId);
             const base = getBasePermissionsForLevel(level);
+            const existing = normalizeUserPreferences(existingPreferencesPayload, level);
             const selected = {};
             userPermissionOptions.forEach(option => {
                 const checkbox = container ? container.querySelector(`[data-user-permission-key="${option.key}"]`) : null;
                 selected[option.key] = !!base[option.key] && !!(checkbox && checkbox.checked);
             });
-            return { permissions: selected };
+            return { permissions: selected, ui: existing.ui };
         }
 
         function setupUserPermissionControlEvents() {
@@ -438,6 +467,176 @@
                     }
                 });
             }
+        }
+
+        function getCurrentActionCenterFavorites() {
+            const normalized = normalizeUserPreferences(currentUser?.preferences || null, currentUser?.level || 'viewer');
+            const knownActions = actionCenterState ? actionCenterState.actionsById : {};
+            const favorites = (normalized.ui.actionCenter.favorites || [])
+                .filter(id => knownActions[id]);
+            const fallback = defaultActionCenterFavorites.filter(id => knownActions[id]);
+            return favorites.length ? favorites : fallback;
+        }
+
+        function createActionEditButton(label, onClick, disabled = false) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'action-edit-button';
+            button.textContent = label;
+            button.disabled = disabled;
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!disabled) onClick();
+            });
+            return button;
+        }
+
+        function createActionEntry(actionId, context, visibleIds, index) {
+            const action = actionCenterState.actionsById[actionId];
+            if (!action) return null;
+
+            const item = document.createElement('div');
+            item.className = `action-item${actionCenterState.customizing ? ' editing' : ''}`;
+            item.dataset.actionId = actionId;
+            item.appendChild(action.button);
+
+            if (actionCenterState.customizing && actionId !== 'home') {
+                const tools = document.createElement('div');
+                tools.className = 'action-edit-tools';
+                if (context === 'favorite') {
+                    tools.appendChild(createActionEditButton('Subir', () => moveActionFavorite(actionId, -1), index <= 0));
+                    tools.appendChild(createActionEditButton('Descer', () => moveActionFavorite(actionId, 1), index >= visibleIds.length - 1));
+                    tools.appendChild(createActionEditButton('Remover favorito', () => toggleActionFavorite(actionId)));
+                } else {
+                    tools.appendChild(createActionEditButton('Favoritar', () => toggleActionFavorite(actionId)));
+                }
+                item.appendChild(tools);
+            }
+
+            return item;
+        }
+
+        function attachActionFolderBehavior(folder) {
+            folder.addEventListener('toggle', () => {
+                if (!folder.open || !actionCenterState) return;
+                Array.from(actionCenterState.folderRow.querySelectorAll('.action-folder')).forEach((other) => {
+                    if (other !== folder) other.removeAttribute('open');
+                });
+            });
+        }
+
+        function renderActionCenterLayout() {
+            if (!actionCenterState) return;
+
+            const favorites = getCurrentActionCenterFavorites();
+            const favoriteSet = new Set(favorites);
+            actionCenterState.primaryRow.innerHTML = '';
+            actionCenterState.folderRow.innerHTML = '';
+
+            const subtitle = actionCenterState.shell.querySelector('[data-action-subtitle]');
+            if (subtitle) {
+                subtitle.textContent = actionCenterState.customizing
+                    ? 'Favoritos ficam na primeira linha. Use Subir/Descer para ordenar.'
+                    : 'Atalhos favoritos primeiro; o restante fica organizado por pastas.';
+            }
+
+            const customizeButton = actionCenterState.shell.querySelector('[data-action-customize]');
+            if (customizeButton) {
+                customizeButton.textContent = actionCenterState.customizing ? 'Concluir' : 'Personalizar';
+            }
+
+            favorites.forEach((actionId, index) => {
+                const item = createActionEntry(actionId, 'favorite', favorites, index);
+                if (item) actionCenterState.primaryRow.appendChild(item);
+            });
+
+            actionCenterState.groups.forEach((group) => {
+                const groupIds = group.ids.filter(actionId => actionCenterState.actionsById[actionId] && !favoriteSet.has(actionId));
+                if (!groupIds.length) return;
+
+                const details = document.createElement('details');
+                details.className = 'action-folder';
+                const summary = document.createElement('summary');
+                summary.textContent = group.label;
+                const menu = document.createElement('div');
+                menu.className = 'action-menu';
+                groupIds.forEach((actionId, index) => {
+                    const item = createActionEntry(actionId, 'group', groupIds, index);
+                    if (item) menu.appendChild(item);
+                });
+                details.appendChild(summary);
+                details.appendChild(menu);
+                attachActionFolderBehavior(details);
+                actionCenterState.folderRow.appendChild(details);
+            });
+
+            if (actionCenterState.legendDetails) {
+                actionCenterState.folderRow.appendChild(actionCenterState.legendDetails);
+            }
+
+            if (userPermissions) {
+                updateUIBasedOnPermissions();
+            }
+        }
+
+        function toggleActionCenterCustomization() {
+            if (!currentUser) return;
+            actionCenterState.customizing = !actionCenterState.customizing;
+            renderActionCenterLayout();
+        }
+
+        function saveActionCenterFavorites(favorites) {
+            if (!currentUser) return;
+            const normalized = normalizeUserPreferences(currentUser.preferences || null, currentUser.level);
+            normalized.ui.actionCenter.favorites = favorites;
+            currentUser.preferences = normalized;
+            currentUser.effectivePermissions = buildEffectiveUserPermissions(currentUser.level, normalized);
+            userPermissions = currentUser.effectivePermissions;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            renderActionCenterLayout();
+
+            fetch(apiUrl('/api/me/preferences'), {
+                method: 'PUT',
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
+                body: JSON.stringify({ ui: normalized.ui })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.success) {
+                    currentUser.preferences = getUserPreferencesForStorage(currentUser.level, data.preferences || normalized);
+                    currentUser.effectivePermissions = buildEffectiveUserPermissions(currentUser.level, currentUser.preferences);
+                    userPermissions = currentUser.effectivePermissions;
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    renderActionCenterLayout();
+                } else {
+                    alert('Nao foi possivel salvar a personalizacao.');
+                }
+            })
+            .catch(err => {
+                console.error('Erro ao salvar personalizacao:', err);
+                alert('Nao foi possivel salvar a personalizacao no servidor.');
+            });
+        }
+
+        function toggleActionFavorite(actionId) {
+            const favorites = getCurrentActionCenterFavorites();
+            const nextFavorites = favorites.includes(actionId)
+                ? favorites.filter(id => id !== actionId)
+                : [...favorites, actionId];
+            saveActionCenterFavorites(nextFavorites);
+        }
+
+        function moveActionFavorite(actionId, direction) {
+            const favorites = getCurrentActionCenterFavorites();
+            const currentIndex = favorites.indexOf(actionId);
+            const nextIndex = currentIndex + direction;
+            if (currentIndex < 0 || nextIndex < 0 || nextIndex >= favorites.length) return;
+            const nextFavorites = [...favorites];
+            const [item] = nextFavorites.splice(currentIndex, 1);
+            nextFavorites.splice(nextIndex, 0, item);
+            saveActionCenterFavorites(nextFavorites);
         }
 
         function organizeActionCenter() {
@@ -485,51 +684,34 @@
                 return button;
             };
 
-            const primaryButtons = [
-                prepareButton(byOnclick('showWeeklyView'), 'Agendas', 'primary', 'view'),
-                prepareButton(byOnclick('showDailyPanelView'), 'Painel do dia', '', 'view'),
-                prepareButton(byOnclick('openScheduleModal'), 'Agendar', 'strong', 'create'),
-                prepareButton(byOnclick('showWaitlistView'), 'Lista de espera', '', 'view')
-            ].filter(Boolean);
+            const actions = [
+                { id: 'weekly', group: 'Agenda', button: prepareButton(byOnclick('showWeeklyView'), 'Agendas', 'primary', 'view') },
+                { id: 'daily', group: 'Agenda', button: prepareButton(byOnclick('showDailyPanelView'), 'Painel do dia', '', 'view') },
+                { id: 'schedule', group: 'Agenda', button: prepareButton(byOnclick('openScheduleModal'), 'Agendar', 'strong', 'create') },
+                { id: 'waitlist', group: 'Agenda', button: prepareButton(byOnclick('showWaitlistView'), 'Lista de espera', '', 'view') },
+                { id: 'professionals', group: 'Cadastros', button: prepareButton(byOnclick('showProfessionalsView'), 'Profissionais', '', 'manageProfessionals') },
+                { id: 'newProfessional', group: 'Cadastros', button: prepareButton(byId('btnCreateProfessional'), 'Novo profissional', '', 'createProfessional') },
+                { id: 'newPatient', group: 'Cadastros', button: prepareButton(byId('btnCreatePatient'), 'Novo paciente', '', 'createPatient') },
+                { id: 'patients', group: 'Cadastros', button: prepareButton(byOnclick('openPatientListModal'), 'Pacientes', '', 'viewPatients') },
+                { id: 'bulk', group: 'Agenda', button: prepareButton(byId('btnBulkCancelAppointments'), 'Alteracao em massa', 'danger', 'bulkCancel') },
+                { id: 'rooms', group: 'Agenda', button: prepareButton(byOnclick('openRoomsAvailabilityModal'), 'Salas', '', 'view') },
+                { id: 'smartRescheduling', group: 'Agenda', button: prepareButton(byOnclick('openSmartReschedulingModal'), 'Reagendamento', '', 'bulkEdit') },
+                { id: 'remarkRequests', group: 'Agenda', button: prepareButton(byId('remarkRequestsButton'), 'Remarques') },
+                { id: 'notifications', group: 'Agenda', button: prepareButton(byId('remarkNotificationsButton'), 'Notificacoes') },
+                { id: 'hptReport', group: 'Relatorios', button: prepareButton(byOnclick('exportReportDirect'), 'Relatorio HPT', '', 'exportReport') },
+                { id: 'reports', group: 'Relatorios', button: prepareButton(byOnclick('showReports'), 'Relatorios', '', 'export') },
+                { id: 'audit', group: 'Relatorios', button: prepareButton(byId('auditButton'), 'Auditoria', '', 'viewAudit') },
+                { id: 'home', group: 'Sistema', button: prepareButton(byOnclick('showHomeView'), 'Inicio') },
+                { id: 'users', group: 'Sistema', button: prepareButton(userManagementButton, 'Usuarios', '', 'manageUsers') },
+                { id: 'sync', group: 'Sistema', button: prepareButton(byId('syncCloudButton'), 'Sincronizar nuvem') },
+                { id: 'config', group: 'Sistema', button: prepareButton(byOnclick('openConfigModal'), 'Config') }
+            ].filter(action => action.button);
 
-            const groups = [
-                {
-                    label: 'Cadastros',
-                    buttons: [
-                        prepareButton(byOnclick('showProfessionalsView'), 'Profissionais', '', 'manageProfessionals'),
-                        prepareButton(byId('btnCreateProfessional'), 'Novo profissional', '', 'createProfessional'),
-                        prepareButton(byId('btnCreatePatient'), 'Novo paciente', '', 'createPatient'),
-                        prepareButton(byOnclick('openPatientListModal'), 'Pacientes', '', 'viewPatients')
-                    ].filter(Boolean)
-                },
-                {
-                    label: 'Agenda',
-                    buttons: [
-                        prepareButton(byId('btnBulkCancelAppointments'), 'Alteracao em massa', 'danger', 'bulkCancel'),
-                        prepareButton(byOnclick('openRoomsAvailabilityModal'), 'Salas', '', 'view'),
-                        prepareButton(byOnclick('openSmartReschedulingModal'), 'Reagendamento', '', 'bulkEdit'),
-                        prepareButton(byId('remarkRequestsButton'), 'Remarques'),
-                        prepareButton(byId('remarkNotificationsButton'), 'Notificacoes')
-                    ].filter(Boolean)
-                },
-                {
-                    label: 'Relatorios',
-                    buttons: [
-                        prepareButton(byOnclick('exportReportDirect'), 'Relatorio HPT', '', 'exportReport'),
-                        prepareButton(byOnclick('showReports'), 'Relatorios', '', 'export'),
-                        prepareButton(byId('auditButton'), 'Auditoria', '', 'viewAudit')
-                    ].filter(Boolean)
-                },
-                {
-                    label: 'Sistema',
-                    buttons: [
-                        prepareButton(byOnclick('showHomeView'), 'Inicio'),
-                        prepareButton(userManagementButton, 'Usuarios', '', 'manageUsers'),
-                        prepareButton(byId('syncCloudButton'), 'Sincronizar nuvem'),
-                        prepareButton(byOnclick('openConfigModal'), 'Config')
-                    ].filter(Boolean)
-                }
-            ];
+            const actionsById = {};
+            actions.forEach(action => {
+                action.button.dataset.actionId = action.id;
+                actionsById[action.id] = action;
+            });
 
             const shell = document.createElement('div');
             shell.className = 'action-center';
@@ -537,38 +719,28 @@
             const top = document.createElement('div');
             top.className = 'action-center-top';
             top.innerHTML = `
-                <div class="action-center-title">
-                    <strong>Central de acoes</strong>
-                    <span>Atalhos principais primeiro; o restante fica organizado por pastas.</span>
+                <div class="action-center-heading">
+                    <div class="action-center-title">
+                        <strong>Central de acoes</strong>
+                        <span data-action-subtitle>Atalhos favoritos primeiro; o restante fica organizado por pastas.</span>
+                    </div>
+                    <button type="button" class="action-customize-button" data-action-customize onclick="toggleActionCenterCustomization()">Personalizar</button>
                 </div>
             `;
 
             const primaryRow = document.createElement('div');
             primaryRow.className = 'action-primary-row';
-            primaryButtons.forEach((button) => primaryRow.appendChild(button));
             top.appendChild(primaryRow);
             shell.appendChild(top);
 
             const folderRow = document.createElement('div');
             folderRow.className = 'action-folder-row';
+            shell.appendChild(folderRow);
 
-            groups.forEach((group) => {
-                if (!group.buttons.length) return;
-                const details = document.createElement('details');
-                details.className = 'action-folder';
-                const summary = document.createElement('summary');
-                summary.textContent = group.label;
-                const menu = document.createElement('div');
-                menu.className = 'action-menu';
-                group.buttons.forEach((button) => menu.appendChild(button));
-                details.appendChild(summary);
-                details.appendChild(menu);
-                folderRow.appendChild(details);
-            });
-
+            let legendDetails = null;
             if (legend) {
-                const details = document.createElement('details');
-                details.className = 'action-folder';
+                legendDetails = document.createElement('details');
+                legendDetails.className = 'action-folder action-folder-legend';
                 const summary = document.createElement('summary');
                 summary.textContent = 'Legenda';
                 const menu = document.createElement('div');
@@ -579,27 +751,33 @@
                     if (swatch) swatch.className = `${swatch.className} legend-swatch`;
                     menu.appendChild(item);
                 });
-                details.appendChild(summary);
-                details.appendChild(menu);
-                folderRow.appendChild(details);
+                legendDetails.appendChild(summary);
+                legendDetails.appendChild(menu);
+                attachActionFolderBehavior(legendDetails);
                 legend.remove();
             }
 
-            shell.appendChild(folderRow);
-            actionBar.replaceWith(shell);
+            actionCenterState = {
+                shell,
+                primaryRow,
+                folderRow,
+                legendDetails,
+                actionsById,
+                customizing: false,
+                groups: [
+                    { label: 'Cadastros', ids: ['professionals', 'newProfessional', 'newPatient', 'patients'] },
+                    { label: 'Agenda', ids: ['weekly', 'daily', 'schedule', 'waitlist', 'bulk', 'rooms', 'smartRescheduling', 'remarkRequests', 'notifications'] },
+                    { label: 'Relatorios', ids: ['hptReport', 'reports', 'audit'] },
+                    { label: 'Sistema', ids: ['home', 'users', 'sync', 'config'] }
+                ]
+            };
 
-            const folders = Array.from(shell.querySelectorAll('.action-folder'));
-            folders.forEach((folder) => {
-                folder.addEventListener('toggle', () => {
-                    if (!folder.open) return;
-                    folders.forEach((other) => {
-                        if (other !== folder) other.removeAttribute('open');
-                    });
-                });
-            });
+            actionBar.replaceWith(shell);
+            renderActionCenterLayout();
+
             document.addEventListener('click', (event) => {
-                if (shell.contains(event.target)) return;
-                folders.forEach((folder) => folder.removeAttribute('open'));
+                if (!actionCenterState || actionCenterState.shell.contains(event.target)) return;
+                Array.from(actionCenterState.folderRow.querySelectorAll('.action-folder')).forEach((folder) => folder.removeAttribute('open'));
             });
         }
 
@@ -809,6 +987,7 @@
             currentUser = sanitizeSessionUser(user);
             userPermissions = buildEffectiveUserPermissions(currentUser.level, currentUser.preferences);
             localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            renderActionCenterLayout();
             return currentUser;
         }
 
@@ -1501,6 +1680,15 @@
             
             // Update professional cards based on permissions
             updateProfessionalCardsPermissions();
+            document.querySelectorAll('.action-item').forEach((item) => {
+                const actionButton = item.querySelector('.action-button');
+                item.style.display = actionButton && actionButton.style.display === 'none' ? 'none' : '';
+            });
+            document.querySelectorAll('.action-folder').forEach((folder) => {
+                if (folder.classList.contains('action-folder-legend')) return;
+                const visibleAction = Array.from(folder.querySelectorAll('.action-item')).some(item => item.style.display !== 'none');
+                folder.style.display = visibleAction ? '' : 'none';
+            });
         }
 
         // User Management Functions
@@ -1979,7 +2167,7 @@
             const level = document.getElementById('editUserLevel').value;
             const professionalId = document.getElementById('editUserProfessional').value || null;
             const notes = document.getElementById('editUserNotes').value.trim();
-            const preferencesPayload = collectUserPreferencesFromControls('editUserPermissions', level);
+            const preferencesPayload = collectUserPreferencesFromControls('editUserPermissions', level, users[username]?.preferences || null);
             if (username === currentUser.username && currentUser.level === 'admin') {
                 preferencesPayload.permissions.canManageUsers = true;
             }

@@ -1229,6 +1229,8 @@ USER_PERMISSION_DEFAULTS = {
     }
 }
 
+DEFAULT_ACTION_CENTER_FAVORITES = ('weekly', 'daily', 'schedule', 'waitlist')
+
 
 def get_table_columns_cached(cur, table_name, refresh=False):
     key = str(table_name).lower()
@@ -1422,7 +1424,32 @@ def normalize_user_preferences(preferences=None, level=None):
         raw_value = raw_permissions[key] if key in raw_permissions else base_value
         normalized_permissions[key] = base_value and bool(raw_value)
 
-    return {'permissions': normalized_permissions}
+    ui_payload = preferences.get('ui')
+    if ui_payload is None:
+        ui_payload = preferences.get('interface')
+    if not isinstance(ui_payload, dict):
+        ui_payload = {}
+
+    action_center_payload = ui_payload.get('actionCenter')
+    if action_center_payload is None:
+        action_center_payload = ui_payload.get('action_center')
+    if not isinstance(action_center_payload, dict):
+        action_center_payload = {}
+
+    favorites = []
+    for item in action_center_payload.get('favorites') or action_center_payload.get('favoritos') or DEFAULT_ACTION_CENTER_FAVORITES:
+        text = str(item or '').strip()
+        if text and text not in favorites:
+            favorites.append(text)
+
+    return {
+        'permissions': normalized_permissions,
+        'ui': {
+            'actionCenter': {
+                'favorites': favorites[:24]
+            }
+        }
+    }
 
 
 def get_effective_user_permissions(level, preferences=None):
@@ -2670,6 +2697,67 @@ def authenticated_user_info():
     if auth_error:
         return auth_error
     return jsonify({'success': True, 'user': user})
+
+
+@app.route('/api/me/preferences', methods=['PUT'])
+def update_authenticated_user_preferences():
+    user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
+
+    data = request.json or {}
+    ui_payload = data.get('ui') if 'ui' in data else data.get('interface')
+    if not isinstance(ui_payload, dict):
+        return jsonify({'success': False, 'error': 'Preferencias visuais invalidas'}), 400
+
+    conn = None
+    cur = None
+    try:
+        username = user.get('username')
+        level = user.get('level')
+        conn = get_connection()
+        cur = conn.cursor()
+        current_preferences = get_user_preferences(cur, username, level)
+        next_preferences = {
+            'permissions': current_preferences.get('permissions') or get_base_user_permissions(level),
+            'ui': ui_payload
+        }
+        saved_preferences = set_user_preferences(
+            cur,
+            username,
+            next_preferences,
+            username,
+            level
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        updated_user = sanitize_user_for_client(
+            user.get('username'),
+            user.get('name'),
+            user.get('level'),
+            user.get('professionalId') or user.get('profissional_id'),
+            saved_preferences
+        )
+        return jsonify({
+            'success': True,
+            'preferences': saved_preferences,
+            'effectivePermissions': get_effective_user_permissions(level, saved_preferences),
+            'user': updated_user
+        })
+    except Exception as e:
+        print('Erro ao atualizar preferencias visuais do usuario:', e)
+        try:
+            if conn:
+                conn.rollback()
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/logout', methods=['POST'])
