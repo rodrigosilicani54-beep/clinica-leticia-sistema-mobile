@@ -1336,67 +1336,68 @@
             const btn = document.getElementById('refreshHeaderBtn');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '⏳ Verificando...';
+                btn.textContent = 'Verificando...';
             }
 
             await checkServerUpdates();
 
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '🔄 Atualizar';
+                btn.textContent = 'Atualizar';
             }
         }
 
         function updateHeaderWithUserInfo() {
             const headerDiv = document.querySelector('.bg-white.rounded-lg.shadow-lg.p-3.mb-3');
-            
-            // Remove existing user info if present
+
             const existingUserInfo = headerDiv.querySelector('.user-info');
             if (existingUserInfo) {
                 existingUserInfo.remove();
             }
-            
-            // Add user info
+
             const userInfo = document.createElement('div');
-            userInfo.className = 'user-info flex justify-between items-center mb-3 bg-blue-50 p-3 rounded-lg';
-            
-            const levelIcons = {
-                admin: '👑',
-                editor: '✏️',
-                viewer: '👁️'
+            userInfo.className = 'user-info mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between';
+
+            const levelInitials = {
+                admin: 'A',
+                editor: 'E',
+                viewer: 'V'
             };
-            
+
             const levelNames = {
                 admin: 'Administrador',
                 editor: 'Editor',
                 viewer: 'Visualizador'
             };
-            
+
             const levelColors = {
-                admin: 'text-red-600',
-                editor: 'text-blue-600',
-                viewer: 'text-green-600'
+                admin: 'border-red-200 bg-red-50 text-red-700',
+                editor: 'border-blue-200 bg-blue-50 text-blue-700',
+                viewer: 'border-emerald-200 bg-emerald-50 text-emerald-700'
             };
-            
+
             userInfo.innerHTML = `
-                <div class="flex items-center space-x-3">
-                    <span class="text-2xl">${levelIcons[currentUser.level]}</span>
-                    <div>
-                        <div class="font-bold ${levelColors[currentUser.level]}">${currentUser.name}</div>
-                        <div class="text-sm text-gray-600">Nível: ${levelNames[currentUser.level]}</div>
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-sm font-bold text-slate-600">
+                        ${levelInitials[currentUser.level] || levelInitials.viewer}
+                    </div>
+                    <div class="min-w-0">
+                        <div class="truncate text-sm font-semibold text-slate-900">${currentUser.name}</div>
+                        <div class="mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${levelColors[currentUser.level] || levelColors.viewer}">
+                            ${levelNames[currentUser.level] || levelNames.viewer}
+                        </div>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button onclick="checkServerUpdatesManual()" id="refreshHeaderBtn" class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors" title="Verificar atualizações do servidor">
-                        🔄 Atualizar
+                <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <button onclick="checkServerUpdatesManual()" id="refreshHeaderBtn" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60" title="Verificar atualizacoes do servidor">
+                        Atualizar
                     </button>
-                    <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm font-medium transition-colors">
-                        🚪 Sair
+                    <button onclick="logout()" class="rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50">
+                        Sair
                     </button>
                 </div>
             `;
-            
-            // Insert after the logo/header brand.
+
             const brand = headerDiv.querySelector('.system-header-brand') || headerDiv.querySelector('h1');
             if (brand && brand.parentNode) {
                 brand.parentNode.insertBefore(userInfo, brand.nextSibling);
