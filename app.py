@@ -320,11 +320,16 @@ def upgrade_plain_password_if_needed(cur, username, stored_password, provided_pa
     return True
 
 
-def sanitize_user_for_client(username, name, level, profissional_id=None):
+def sanitize_user_for_client(username, name, level, profissional_id=None, preferences=None):
+    normalized_preferences = normalize_user_preferences(preferences, level)
+    effective_permissions = get_effective_user_permissions(level, normalized_preferences)
     user = {
         'username': username,
         'name': name or username,
-        'level': normalize_level(level)
+        'level': normalize_level(level),
+        'preferences': normalized_preferences,
+        'effectivePermissions': effective_permissions,
+        'permissions': effective_permissions
     }
     if profissional_id is not None:
         user['professionalId'] = profissional_id
@@ -417,10 +422,11 @@ def authenticate_credentials(username, password):
         if not verify_password_value(db_password, password):
             return None, (jsonify({'success': False, 'error': 'Credenciais invalidas'}), 401)
 
-        if upgrade_plain_password_if_needed(cur, db_username, db_password, password):
-            conn.commit()
+        upgrade_plain_password_if_needed(cur, db_username, db_password, password)
+        preferences = get_user_preferences(cur, db_username, db_level)
+        conn.commit()
 
-        user = sanitize_user_for_client(db_username, db_name, db_level, profissional_id)
+        user = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences)
         return user, None
     except Exception as e:
         print('Erro ao autenticar credenciais:', e)
@@ -494,7 +500,26 @@ def get_authenticated_user():
         if db_active is False:
             return None, (jsonify({'success': False, 'error': 'Usuario inativo'}), 403)
 
-        authenticated = sanitize_user_for_client(db_username, db_name, db_level, profissional_id)
+        conn = None
+        cur = None
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            preferences = get_user_preferences(cur, db_username, db_level)
+            conn.commit()
+        except Exception as e:
+            print('Erro ao buscar preferencias do usuario autenticado:', e)
+            preferences = normalize_user_preferences({}, db_level)
+        finally:
+            try:
+                if cur:
+                    cur.close()
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+        authenticated = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences)
         set_auth_user_cache(cache_key, authenticated)
         return authenticated, None
 
@@ -1121,6 +1146,88 @@ APP_CONFIG_CACHE_LOCK = threading.Lock()
 APP_CONFIG_CACHE_TTL_SECONDS = float(os.environ.get('APP_CONFIG_CACHE_TTL_SECONDS', '30'))
 WAITLIST_SCHEMA_READY = False
 WAITLIST_SCHEMA_LOCK = threading.Lock()
+USER_PREFERENCES_SCHEMA_READY = False
+USER_PREFERENCES_SCHEMA_LOCK = threading.Lock()
+
+USER_PERMISSION_KEYS = (
+    'canView',
+    'canViewPatients',
+    'canCreate',
+    'canCreateProfessional',
+    'canCreatePatient',
+    'canEdit',
+    'canEditProfessionals',
+    'canEditPatients',
+    'canDelete',
+    'canExport',
+    'canExportReport',
+    'canImport',
+    'canBulkEdit',
+    'canBulkCancel',
+    'canManageProfessionals',
+    'canManageUsers',
+    'canViewAudit'
+)
+
+USER_PERMISSION_DEFAULTS = {
+    'admin': {
+        'canView': True,
+        'canViewPatients': True,
+        'canCreate': True,
+        'canCreateProfessional': True,
+        'canCreatePatient': True,
+        'canEdit': True,
+        'canEditProfessionals': True,
+        'canEditPatients': True,
+        'canDelete': True,
+        'canExport': True,
+        'canExportReport': True,
+        'canImport': True,
+        'canBulkEdit': True,
+        'canBulkCancel': True,
+        'canManageProfessionals': True,
+        'canManageUsers': True,
+        'canViewAudit': True
+    },
+    'editor': {
+        'canView': True,
+        'canViewPatients': True,
+        'canCreate': True,
+        'canCreateProfessional': False,
+        'canCreatePatient': False,
+        'canEdit': True,
+        'canEditProfessionals': False,
+        'canEditPatients': False,
+        'canDelete': False,
+        'canExport': True,
+        'canExportReport': True,
+        'canImport': True,
+        'canBulkEdit': True,
+        'canBulkCancel': False,
+        'canManageProfessionals': True,
+        'canManageUsers': False,
+        'canViewAudit': False
+    },
+    'viewer': {
+        'canView': True,
+        'canViewPatients': False,
+        'canCreate': False,
+        'canCreateProfessional': False,
+        'canCreatePatient': False,
+        'canEdit': False,
+        'canEditProfessionals': False,
+        'canEditPatients': False,
+        'canDelete': False,
+        'canExport': True,
+        'canExportReport': False,
+        'canImport': False,
+        'canBulkEdit': False,
+        'canBulkCancel': False,
+        'canManageProfessionals': False,
+        'canManageUsers': False,
+        'canViewAudit': False
+    }
+}
 
 
 def get_table_columns_cached(cur, table_name, refresh=False):
@@ -1216,6 +1323,17 @@ def set_auth_user_cache(cache_key, user):
     set_ttl_cache(AUTH_USER_CACHE, AUTH_USER_CACHE_LOCK, cache_key, dict(user), AUTH_USER_CACHE_TTL_SECONDS)
 
 
+def invalidate_auth_user_cache(username=None):
+    username_key = str(username or '').strip().lower()
+    with AUTH_USER_CACHE_LOCK:
+        if not username_key:
+            AUTH_USER_CACHE.clear()
+            return
+        for cache_key in list(AUTH_USER_CACHE.keys()):
+            if isinstance(cache_key, tuple) and len(cache_key) > 1 and cache_key[1] == username_key:
+                AUTH_USER_CACHE.pop(cache_key, None)
+
+
 def get_remarque_list_cache(cache_key):
     cached = get_ttl_cache(REMARQUE_LIST_CACHE, REMARQUE_LIST_CACHE_LOCK, cache_key, REMARQUE_LIST_CACHE_TTL_SECONDS)
     return dict(cached) if cached else None
@@ -1253,6 +1371,112 @@ def clear_runtime_caches():
         cleared['configuracoes'] = len(APP_CONFIG_CACHE)
         APP_CONFIG_CACHE.clear()
     return cleared
+
+
+def ensure_user_preferences_table(cur):
+    global USER_PREFERENCES_SCHEMA_READY
+    if USER_PREFERENCES_SCHEMA_READY:
+        return
+    with USER_PREFERENCES_SCHEMA_LOCK:
+        if USER_PREFERENCES_SCHEMA_READY:
+            return
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS usuario_preferencias (
+                username VARCHAR(255) PRIMARY KEY,
+                preferencias JSONB NOT NULL DEFAULT '{}'::jsonb,
+                atualizado_por VARCHAR(255),
+                atualizado_em TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("ALTER TABLE usuario_preferencias ADD COLUMN IF NOT EXISTS preferencias JSONB NOT NULL DEFAULT '{}'::jsonb")
+        cur.execute("ALTER TABLE usuario_preferencias ADD COLUMN IF NOT EXISTS atualizado_por VARCHAR(255)")
+        cur.execute("ALTER TABLE usuario_preferencias ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW()")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_preferencias_username ON usuario_preferencias (username)")
+        USER_PREFERENCES_SCHEMA_READY = True
+
+
+def get_base_user_permissions(level):
+    normalized_level = normalize_level(level)
+    return dict(USER_PERMISSION_DEFAULTS.get(normalized_level) or USER_PERMISSION_DEFAULTS['viewer'])
+
+
+def normalize_user_preferences(preferences=None, level=None):
+    if isinstance(preferences, str):
+        try:
+            preferences = json.loads(preferences)
+        except Exception:
+            preferences = {}
+    if not isinstance(preferences, dict):
+        preferences = {}
+
+    raw_permissions = preferences.get('permissions')
+    if raw_permissions is None:
+        raw_permissions = preferences.get('permissoes')
+    if not isinstance(raw_permissions, dict):
+        raw_permissions = {}
+
+    base_permissions = get_base_user_permissions(level)
+    normalized_permissions = {}
+    for key in USER_PERMISSION_KEYS:
+        base_value = bool(base_permissions.get(key, False))
+        raw_value = raw_permissions[key] if key in raw_permissions else base_value
+        normalized_permissions[key] = base_value and bool(raw_value)
+
+    return {'permissions': normalized_permissions}
+
+
+def get_effective_user_permissions(level, preferences=None):
+    normalized = normalize_user_preferences(preferences, level)
+    return dict(normalized.get('permissions') or {})
+
+
+def user_has_effective_permission(user, permission_key):
+    if not user or not permission_key:
+        return False
+    permissions_payload = user.get('effectivePermissions') or user.get('permissions')
+    if isinstance(permissions_payload, dict) and permission_key in permissions_payload:
+        return bool(permissions_payload.get(permission_key))
+    return bool(get_base_user_permissions(user.get('level')).get(permission_key, False))
+
+
+def require_admin_permission(permission_key=None):
+    user, auth_error = get_authenticated_user()
+    if auth_error:
+        return None, auth_error
+    if normalize_level(user.get('level')) != 'admin':
+        return None, (jsonify({'success': False, 'error': 'Acesso negado'}), 403)
+    if permission_key and not user_has_effective_permission(user, permission_key):
+        return None, (jsonify({'success': False, 'error': 'Permissao personalizada negada'}), 403)
+    return user, None
+
+
+def get_user_preferences(cur, username, level=None):
+    ensure_user_preferences_table(cur)
+    username_key = str(username or '').strip().lower()
+    if not username_key:
+        return normalize_user_preferences({}, level)
+    cur.execute(
+        "SELECT preferencias FROM usuario_preferencias WHERE lower(username) = %s LIMIT 1",
+        (username_key,)
+    )
+    row = cur.fetchone()
+    return normalize_user_preferences(row[0] if row else {}, level)
+
+
+def set_user_preferences(cur, username, preferences, updated_by=None, level=None):
+    ensure_user_preferences_table(cur)
+    username_key = str(username or '').strip().lower()
+    normalized = normalize_user_preferences(preferences, level)
+    cur.execute("""
+        INSERT INTO usuario_preferencias (username, preferencias, atualizado_por, atualizado_em)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (username) DO UPDATE
+        SET preferencias = EXCLUDED.preferencias,
+            atualizado_por = EXCLUDED.atualizado_por,
+            atualizado_em = NOW()
+    """, (username_key, Json(normalized), updated_by))
+    invalidate_auth_user_cache(username_key)
+    return normalized
 
 
 def ensure_app_config_table(cur):
@@ -2108,6 +2332,7 @@ def ensure_performance_indexes_background():
         ensure_agendamento_auditoria_table(cur)
         ensure_audit_logs_table(cur)
         ensure_usuarios_audit_columns(cur)
+        ensure_user_preferences_table(cur)
         appointment_cols = ensure_salas_schema(cur)
         appointment_cols = migrate_existing_agendamento_links(
             cur,
@@ -2200,11 +2425,11 @@ def listar_salas():
 # =======================
 @app.route("/api/usuarios", methods=["POST"])
 def criar_usuario():
-    err = require_admin()
+    authenticated_user, err = require_admin_permission('canManageUsers')
     if err:
         return err
 
-    data = request.json
+    data = request.json or {}
 
     print('Payload criar_usuario:', data)
 
@@ -2215,7 +2440,7 @@ def criar_usuario():
     level = normalize_level(level)
     notes = data.get("notes", "")
     profissional_id = data.get('profissional_id') or data.get('professional_id') or data.get('professionalId') or data.get('profissionalId')
-    authenticated_user, _auth_error = get_authenticated_user()
+    preferences = data.get('preferences') if 'preferences' in data else data.get('preferencias')
     current_user = (authenticated_user or {}).get('username') or "admin"
 
     if not username:
@@ -2261,6 +2486,8 @@ def criar_usuario():
             VALUES ({placeholders}, NOW())
         """, tuple(values))
 
+        saved_preferences = set_user_preferences(cur, username, preferences or {}, current_user, level)
+
         insert_audit_log(
             cur,
             'usuario_criado',
@@ -2273,7 +2500,8 @@ def criar_usuario():
                 'name': name,
                 'level': level,
                 'profissional_id': profissional_id,
-                'is_active': True
+                'is_active': True,
+                'preferences': saved_preferences
             }
         )
 
@@ -2299,7 +2527,7 @@ def criar_usuario():
 # Endpoint para listar usuários (útil para verificação/sincronização)
 @app.route("/api/usuarios", methods=["GET"])
 def listar_usuarios():
-    auth_check = require_admin()
+    _authenticated_user, auth_check = require_admin_permission('canManageUsers')
     if auth_check:
         return auth_check
 
@@ -2307,6 +2535,7 @@ def listar_usuarios():
         conn = get_connection()
         cur = conn.cursor()
         user_cols = ensure_usuarios_audit_columns(cur)
+        ensure_user_preferences_table(cur)
         conn.commit()
 
         select_fields = ['id', 'name', 'username', 'level', 'created_at']
@@ -2324,8 +2553,6 @@ def listar_usuarios():
         )
         rows = cur.fetchall()
         column_names = [desc[0] for desc in cur.description]
-        cur.close()
-        conn.close()
 
         users_list = []
         for r in rows:
@@ -2346,7 +2573,15 @@ def listar_usuarios():
             if 'profissional_id' in item:
                 user_obj['professionalId'] = item.get('profissional_id')
                 user_obj['profissional_id'] = item.get('profissional_id')
+            user_preferences = get_user_preferences(cur, item.get('username'), user_obj.get('level'))
+            user_obj['preferences'] = user_preferences
+            user_obj['effectivePermissions'] = get_effective_user_permissions(user_obj.get('level'), user_preferences)
+            user_obj['permissions'] = user_obj['effectivePermissions']
             users_list.append(user_obj)
+
+        conn.commit()
+        cur.close()
+        conn.close()
 
         return jsonify({"success": True, "users": users_list})
     except Exception as e:
@@ -2596,20 +2831,27 @@ def atualizar_usuario(username):
     is_self = str(authenticated_user.get('username') or '').lower() == str(username or '').lower()
     if not is_admin and not is_self:
         return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+    if is_admin and not is_self and not user_has_effective_permission(authenticated_user, 'canManageUsers'):
+        return jsonify({'success': False, 'error': 'Permissao personalizada negada'}), 403
 
     name = data.get('name')
     password = data.get('password')
     level = data.get('level')
     profissional_id = data.get('profissional_id') or data.get('professional_id') or data.get('professionalId') or data.get('profissionalId')
     is_active = data.get('isActive', None)
+    preferences_provided = 'preferences' in data or 'preferencias' in data
+    preferences = data.get('preferences') if 'preferences' in data else data.get('preferencias')
 
-    if not is_admin and (level is not None or profissional_id is not None or is_active is not None):
+    if not is_admin and (level is not None or profissional_id is not None or is_active is not None or preferences_provided):
         return jsonify({'success': False, 'error': 'Apenas administradores podem alterar permissões de usuário'}), 403
+    if is_admin and preferences_provided and not user_has_effective_permission(authenticated_user, 'canManageUsers'):
+        return jsonify({'success': False, 'error': 'Permissao personalizada negada'}), 403
 
     try:
         conn = get_connection()
         cur = conn.cursor()
         user_cols = ensure_usuarios_audit_columns(cur)
+        ensure_user_preferences_table(cur)
         select_fields = ['username', 'name', 'level', 'is_active']
         if 'profissional_id' in user_cols:
             select_fields.append('profissional_id')
@@ -2623,6 +2865,8 @@ def atualizar_usuario(username):
             conn.close()
             return jsonify({'success': False, 'error': 'Usuario nao encontrado'}), 404
         before_data = dict(zip(select_fields, before_row))
+        before_preferences = get_user_preferences(cur, before_data.get('username'), before_data.get('level'))
+        before_data['preferences'] = before_preferences
 
         # Build update dynamically
         fields = []
@@ -2644,14 +2888,15 @@ def atualizar_usuario(username):
             fields.append('is_active = %s')
             values.append(is_active)
 
-        if len(fields) == 0:
+        if len(fields) == 0 and not preferences_provided:
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': 'Nada para atualizar'})
 
-        values.append(str(username or '').lower())
-        sql = f"UPDATE usuarios SET {', '.join(fields)} WHERE lower(username) = %s"
-        cur.execute(sql, tuple(values))
+        if fields:
+            values.append(str(username or '').lower())
+            sql = f"UPDATE usuarios SET {', '.join(fields)} WHERE lower(username) = %s"
+            cur.execute(sql, tuple(values))
 
         cur.execute(
             f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
@@ -2659,6 +2904,20 @@ def atualizar_usuario(username):
         )
         after_row = cur.fetchone()
         after_data = dict(zip(select_fields, after_row)) if after_row else {}
+        if preferences_provided:
+            if is_self and normalize_level(after_data.get('level') or level or before_data.get('level')) == 'admin':
+                preferences = normalize_user_preferences(preferences or {}, after_data.get('level') or level or before_data.get('level'))
+                preferences['permissions']['canManageUsers'] = True
+            after_preferences = set_user_preferences(
+                cur,
+                after_data.get('username') or username,
+                preferences or {},
+                authenticated_user.get('username'),
+                after_data.get('level') or level or before_data.get('level')
+            )
+        else:
+            after_preferences = get_user_preferences(cur, after_data.get('username') or username, after_data.get('level') or level)
+        after_data['preferences'] = after_preferences
         changes = build_audit_changes(before_data, after_data)
         if password:
             changes['senha'] = {'antes': '[protegida]', 'depois': 'alterada'}
@@ -2680,8 +2939,9 @@ def atualizar_usuario(username):
         conn.commit()
         cur.close()
         conn.close()
+        invalidate_auth_user_cache(username)
 
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'preferences': after_preferences, 'effectivePermissions': get_effective_user_permissions(after_data.get('level'), after_preferences)})
     except Exception as e:
         print('Erro ao atualizar usuário:', e)
         try:
@@ -2698,12 +2958,11 @@ def atualizar_usuario(username):
 @app.route('/api/usuarios/<username>', methods=['DELETE'])
 def deletar_usuario(username):
     # Require admin credentials to delete a user
-    admin_check = require_admin()
+    authenticated_user, admin_check = require_admin_permission('canManageUsers')
     if admin_check:
         return admin_check
 
     try:
-        authenticated_user, _auth_error = get_authenticated_user()
         conn = get_connection()
         cur = conn.cursor()
         user_cols = ensure_usuarios_audit_columns(cur)
@@ -2718,6 +2977,10 @@ def deletar_usuario(username):
         )
         before_row = cur.fetchone()
         before_data = dict(zip(select_fields, before_row)) if before_row else None
+        if before_data:
+            before_data['preferences'] = get_user_preferences(cur, before_data.get('username'), before_data.get('level'))
+        ensure_user_preferences_table(cur)
+        cur.execute("DELETE FROM usuario_preferencias WHERE lower(username) = %s", (str(username or '').lower(),))
         cur.execute("DELETE FROM usuarios WHERE lower(username) = %s", (str(username or '').lower(),))
         if before_data:
             insert_audit_log(
@@ -5518,6 +5781,10 @@ def sync_state():
         cur.execute("SELECT COUNT(*), MAX(atualizado_em) FROM sistema_configuracoes")
         config_count, config_max = cur.fetchone()
 
+        ensure_user_preferences_table(cur)
+        cur.execute("SELECT COUNT(*), MAX(atualizado_em) FROM usuario_preferencias")
+        user_preferences_count, user_preferences_max = cur.fetchone()
+
         ensure_remarque_table_cached(cur)
         cur.execute("""
             SELECT COUNT(*),
@@ -5555,6 +5822,10 @@ def sync_state():
             'configuracoes': {
                 'count': config_count or 0,
                 'max_timestamp': format_sync_timestamp(config_max)
+            },
+            'usuarios': {
+                'preferences_count': user_preferences_count or 0,
+                'preferences_max_timestamp': format_sync_timestamp(user_preferences_max)
             },
             'remarques': {
                 'count': remarque_count or 0,

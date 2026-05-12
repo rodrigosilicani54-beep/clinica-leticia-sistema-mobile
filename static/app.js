@@ -333,6 +333,113 @@
             }
         };
 
+        const userPermissionOptions = [
+            { key: 'canView', label: 'Ver agendas' },
+            { key: 'canViewPatients', label: 'Ver pacientes' },
+            { key: 'canCreate', label: 'Criar agendamentos' },
+            { key: 'canEdit', label: 'Editar agendamentos' },
+            { key: 'canDelete', label: 'Excluir agendamentos' },
+            { key: 'canBulkEdit', label: 'Alteracao em lote' },
+            { key: 'canBulkCancel', label: 'Cancelamento em massa' },
+            { key: 'canCreateProfessional', label: 'Criar profissionais' },
+            { key: 'canEditProfessionals', label: 'Editar profissionais' },
+            { key: 'canCreatePatient', label: 'Criar pacientes' },
+            { key: 'canEditPatients', label: 'Editar pacientes' },
+            { key: 'canManageProfessionals', label: 'Gerenciar profissionais' },
+            { key: 'canManageUsers', label: 'Gerenciar usuarios' },
+            { key: 'canExport', label: 'Exportar agenda' },
+            { key: 'canExportReport', label: 'Relatorio HPT' },
+            { key: 'canImport', label: 'Importar planilhas' },
+            { key: 'canViewAudit', label: 'Auditoria' }
+        ];
+
+        function getBasePermissionsForLevel(level) {
+            const normalizedLevel = String(level || 'viewer').toLowerCase();
+            return { ...(permissions[normalizedLevel] || permissions.viewer) };
+        }
+
+        function normalizeUserPreferences(preferencesPayload, level) {
+            const base = getBasePermissionsForLevel(level);
+            const rawPermissions = preferencesPayload && typeof preferencesPayload === 'object'
+                ? (preferencesPayload.permissions || preferencesPayload.permissoes || {})
+                : {};
+            const normalizedPermissions = {};
+            userPermissionOptions.forEach(option => {
+                const baseValue = !!base[option.key];
+                const rawValue = Object.prototype.hasOwnProperty.call(rawPermissions, option.key)
+                    ? !!rawPermissions[option.key]
+                    : baseValue;
+                normalizedPermissions[option.key] = baseValue && rawValue;
+            });
+            return { permissions: normalizedPermissions };
+        }
+
+        function buildEffectiveUserPermissions(level, preferencesPayload) {
+            return normalizeUserPreferences(preferencesPayload, level).permissions;
+        }
+
+        function getUserPreferencesForStorage(level, preferencesPayload) {
+            return normalizeUserPreferences(preferencesPayload, level);
+        }
+
+        function renderUserPermissionControls(containerId, level, preferencesPayload) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const base = getBasePermissionsForLevel(level);
+            const normalized = normalizeUserPreferences(preferencesPayload, level).permissions;
+            container.innerHTML = userPermissionOptions.map(option => {
+                const allowedByLevel = !!base[option.key];
+                const checked = allowedByLevel && normalized[option.key] ? 'checked' : '';
+                const disabled = allowedByLevel ? '' : 'disabled';
+                const mutedClass = allowedByLevel ? 'text-gray-800' : 'text-gray-400';
+                return `
+                    <label class="flex items-center gap-2 rounded border border-gray-200 bg-white px-3 py-2 text-sm ${mutedClass}">
+                        <input type="checkbox" data-user-permission-key="${option.key}" ${checked} ${disabled} class="h-4 w-4">
+                        <span>${option.label}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function collectUserPreferencesFromControls(containerId, level) {
+            const container = document.getElementById(containerId);
+            const base = getBasePermissionsForLevel(level);
+            const selected = {};
+            userPermissionOptions.forEach(option => {
+                const checkbox = container ? container.querySelector(`[data-user-permission-key="${option.key}"]`) : null;
+                selected[option.key] = !!base[option.key] && !!(checkbox && checkbox.checked);
+            });
+            return { permissions: selected };
+        }
+
+        function setupUserPermissionControlEvents() {
+            const newLevel = document.getElementById('newUserLevel');
+            if (newLevel && newLevel.dataset.permissionListener !== '1') {
+                newLevel.dataset.permissionListener = '1';
+                newLevel.addEventListener('change', () => {
+                    renderUserPermissionControls('newUserPermissions', newLevel.value, null);
+                });
+            }
+
+            const editLevel = document.getElementById('editUserLevel');
+            if (editLevel && editLevel.dataset.permissionListener !== '1') {
+                editLevel.dataset.permissionListener = '1';
+                editLevel.addEventListener('change', () => {
+                    const username = document.getElementById('editUserId')?.value;
+                    const user = users[username] || {};
+                    renderUserPermissionControls('editUserPermissions', editLevel.value, user.preferences || null);
+                    if (username === currentUser?.username && editLevel.value === 'admin') {
+                        const manageSelfCheckbox = document.querySelector('#editUserPermissions [data-user-permission-key="canManageUsers"]');
+                        if (manageSelfCheckbox) {
+                            manageSelfCheckbox.checked = true;
+                            manageSelfCheckbox.disabled = true;
+                        }
+                    }
+                });
+            }
+        }
+
         function organizeActionCenter() {
             const header = document.querySelector('.container > div.bg-white.rounded-lg.shadow-lg.p-3.mb-3');
             if (!header || header.dataset.actionCenterReady === '1') return;
@@ -368,36 +475,39 @@
                 return button;
             };
 
-            const prepareButton = (button, label, variant = '') => {
+            const prepareButton = (button, label, variant = '', permissionAction = '') => {
                 if (!button) return null;
                 relabel(button, label);
                 button.className = `action-button${variant ? ` ${variant}` : ''}${button.querySelector('span[id$="Badge"]') ? ' relative' : ''}`;
+                if (permissionAction) {
+                    button.dataset.permissionAction = permissionAction;
+                }
                 return button;
             };
 
             const primaryButtons = [
-                prepareButton(byOnclick('showWeeklyView'), 'Agendas', 'primary'),
-                prepareButton(byOnclick('showDailyPanelView'), 'Painel do dia'),
-                prepareButton(byOnclick('openScheduleModal'), 'Agendar', 'strong'),
-                prepareButton(byOnclick('showWaitlistView'), 'Lista de espera')
+                prepareButton(byOnclick('showWeeklyView'), 'Agendas', 'primary', 'view'),
+                prepareButton(byOnclick('showDailyPanelView'), 'Painel do dia', '', 'view'),
+                prepareButton(byOnclick('openScheduleModal'), 'Agendar', 'strong', 'create'),
+                prepareButton(byOnclick('showWaitlistView'), 'Lista de espera', '', 'view')
             ].filter(Boolean);
 
             const groups = [
                 {
                     label: 'Cadastros',
                     buttons: [
-                        prepareButton(byOnclick('showProfessionalsView'), 'Profissionais'),
-                        prepareButton(byId('btnCreateProfessional'), 'Novo profissional'),
-                        prepareButton(byId('btnCreatePatient'), 'Novo paciente'),
-                        prepareButton(byOnclick('openPatientListModal'), 'Pacientes')
+                        prepareButton(byOnclick('showProfessionalsView'), 'Profissionais', '', 'manageProfessionals'),
+                        prepareButton(byId('btnCreateProfessional'), 'Novo profissional', '', 'createProfessional'),
+                        prepareButton(byId('btnCreatePatient'), 'Novo paciente', '', 'createPatient'),
+                        prepareButton(byOnclick('openPatientListModal'), 'Pacientes', '', 'viewPatients')
                     ].filter(Boolean)
                 },
                 {
                     label: 'Agenda',
                     buttons: [
-                        prepareButton(byId('btnBulkCancelAppointments'), 'Alteracao em massa', 'danger'),
-                        prepareButton(byOnclick('openRoomsAvailabilityModal'), 'Salas'),
-                        prepareButton(byOnclick('openSmartReschedulingModal'), 'Reagendamento'),
+                        prepareButton(byId('btnBulkCancelAppointments'), 'Alteracao em massa', 'danger', 'bulkCancel'),
+                        prepareButton(byOnclick('openRoomsAvailabilityModal'), 'Salas', '', 'view'),
+                        prepareButton(byOnclick('openSmartReschedulingModal'), 'Reagendamento', '', 'bulkEdit'),
                         prepareButton(byId('remarkRequestsButton'), 'Remarques'),
                         prepareButton(byId('remarkNotificationsButton'), 'Notificacoes')
                     ].filter(Boolean)
@@ -405,16 +515,16 @@
                 {
                     label: 'Relatorios',
                     buttons: [
-                        prepareButton(byOnclick('exportReportDirect'), 'Relatorio HPT'),
-                        prepareButton(byOnclick('showReports'), 'Relatorios'),
-                        prepareButton(byId('auditButton'), 'Auditoria')
+                        prepareButton(byOnclick('exportReportDirect'), 'Relatorio HPT', '', 'exportReport'),
+                        prepareButton(byOnclick('showReports'), 'Relatorios', '', 'export'),
+                        prepareButton(byId('auditButton'), 'Auditoria', '', 'viewAudit')
                     ].filter(Boolean)
                 },
                 {
                     label: 'Sistema',
                     buttons: [
                         prepareButton(byOnclick('showHomeView'), 'Inicio'),
-                        prepareButton(userManagementButton, 'Usuarios'),
+                        prepareButton(userManagementButton, 'Usuarios', '', 'manageUsers'),
                         prepareButton(byId('syncCloudButton'), 'Sincronizar nuvem'),
                         prepareButton(byOnclick('openConfigModal'), 'Config')
                     ].filter(Boolean)
@@ -677,10 +787,15 @@
             if (!user) return null;
             const username = String(user.username || '').toLowerCase();
             const level = String(user.level || 'viewer').toLowerCase();
+            const preferencesPayload = getUserPreferencesForStorage(level, user.preferences || user.preferencias || {
+                permissions: user.effectivePermissions || user.permissions
+            });
             const sanitized = {
                 username,
                 level,
-                name: user.name || username
+                name: user.name || username,
+                preferences: preferencesPayload,
+                effectivePermissions: buildEffectiveUserPermissions(level, preferencesPayload)
             };
             if (user.professionalId || user.profissional_id) {
                 sanitized.professionalId = user.professionalId || user.profissional_id;
@@ -692,7 +807,7 @@
 
         function applyAuthenticatedUser(user) {
             currentUser = sanitizeSessionUser(user);
-            userPermissions = permissions[currentUser.level] || permissions.viewer;
+            userPermissions = buildEffectiveUserPermissions(currentUser.level, currentUser.preferences);
             localStorage.setItem('currentUser', JSON.stringify(currentUser));
             return currentUser;
         }
@@ -1022,6 +1137,7 @@
                 pacientes: state.pacientes || {},
                 lista_espera: state.lista_espera || {},
                 configuracoes: state.configuracoes || {},
+                usuarios: state.usuarios || {},
                 remarques: state.remarques || {}
             };
         }
@@ -1037,6 +1153,28 @@
         function hasAgendaSyncStateChanged(previousState, nextState) {
             return isSyncSectionChanged(previousState, nextState, 'agendamentos')
                 || isSyncSectionChanged(previousState, nextState, 'profissionais');
+        }
+
+        async function refreshAuthenticatedUserFromServer() {
+            if (!currentUser) return null;
+            try {
+                const response = await fetch(apiUrl('/api/me'), {
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (data && data.success && data.user) {
+                    applyAuthenticatedUser(data.user);
+                    updateHeaderWithUserInfo();
+                    updateUIBasedOnPermissions();
+                    return currentUser;
+                }
+            } catch (err) {
+                console.warn('Nao foi possivel atualizar preferencias do usuario:', err);
+            }
+            return null;
         }
 
         function rerenderOpenAppointmentActions() {
@@ -1055,7 +1193,8 @@
             const remarquesChanged = isSyncSectionChanged(previousState, nextState, 'remarques');
             const patientsChanged = isSyncSectionChanged(previousState, nextState, 'pacientes');
             const waitlistChanged = isSyncSectionChanged(previousState, nextState, 'lista_espera');
-            if (!configChanged && !remarquesChanged && !patientsChanged && !waitlistChanged) return;
+            const usersChanged = isSyncSectionChanged(previousState, nextState, 'usuarios');
+            if (!configChanged && !remarquesChanged && !patientsChanged && !waitlistChanged && !usersChanged) return;
 
             const refreshTasks = [];
             if (configChanged) {
@@ -1070,6 +1209,12 @@
             if (waitlistChanged) {
                 waitlistFetchPromise = null;
                 refreshTasks.push(fetchWaitlistFromServer({ force: true }));
+            }
+            if (usersChanged) {
+                refreshTasks.push(refreshAuthenticatedUserFromServer());
+                if (checkPermission('manageUsers')) {
+                    refreshTasks.push(fetchUsersFromServer());
+                }
             }
 
             await Promise.allSettled(refreshTasks);
@@ -1266,6 +1411,7 @@
             buttons.forEach(button => {
                 const buttonText = button.textContent.toLowerCase();
                 const isPermissionControlled =
+                    !!button.dataset.permissionAction ||
                     buttonText.includes('cadastrar') ||
                     buttonText.includes('agendar') ||
                     buttonText.includes('excel') ||
@@ -1285,6 +1431,12 @@
             
             buttons.forEach(button => {
                 const buttonText = button.textContent.toLowerCase();
+                if (button.dataset.permissionAction) {
+                    if (!checkPermission(button.dataset.permissionAction)) {
+                        button.style.display = 'none';
+                    }
+                    return;
+                }
                 
                 // Hide/show buttons based on permissions
                 if (buttonText.includes('cadastrar') && !userPermissions.canCreate) {
@@ -1357,7 +1509,9 @@
                 return;
             }
             
+            setupUserPermissionControlEvents();
             populateUserProfessionalSelects();
+            renderUserPermissionControls('newUserPermissions', document.getElementById('newUserLevel')?.value || 'viewer', null);
             loadUsersTable();
             updateUserStats();
             document.getElementById('userManagementModal').classList.add('active');
@@ -1378,7 +1532,7 @@
             editUserSelect.innerHTML = professionalOptions.join('');
         }
 
-        function createNewUser(event) {
+        function legacyCreateNewUserDisabled(event) {
             event.preventDefault();
             
             if (!checkPermission('manageUsers')) {
@@ -1392,6 +1546,7 @@
             const level = document.getElementById('newUserLevel').value;
             const notes = document.getElementById('newUserNotes').value.trim();
             const profissional_id = document.getElementById('newUserProfessional').value || null;
+            const preferencesPayload = collectUserPreferencesFromControls('newUserPermissions', level);
 
             // Password required
             if (!password || password.trim() === '') {
@@ -1416,6 +1571,8 @@
                 level: level,
                 name: name,
                 professionalId: profissional_id,
+                preferences: preferencesPayload,
+                permissions: buildEffectiveUserPermissions(level, preferencesPayload),
                 notes: notes || '',
                 isDefault: false,
                 createdBy: currentUser.username,
@@ -1425,17 +1582,17 @@
             };
             
             // Save to backend (Flask -> Supabase)
-            fetch("http://127.0.0.1:5000/api/usuarios", {
+            fetch(apiUrl('/api/usuarios'), {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
                 body: JSON.stringify({
                     username: username,
                     password: password,
                     level: level,
                     name: name,
                     profissional_id: profissional_id,
+                    preferences: preferencesPayload,
                     notes: notes,
                     createdBy: currentUser ? currentUser.username : 'system'
                 })
@@ -1479,6 +1636,85 @@
             showSuccessMessage(`✅ Usuário "${name}" criado com sucesso!\nNome de usuário: ${username}\nNível: ${getLevelLabel(level)}`);
         }
 
+        function createNewUser(event) {
+            event.preventDefault();
+
+            if (!checkPermission('manageUsers')) {
+                showPermissionDenied('manageUsers');
+                return;
+            }
+
+            const username = document.getElementById('newUsername').value.toLowerCase().trim();
+            const name = document.getElementById('newUserName').value.trim();
+            const password = document.getElementById('newUserPassword').value;
+            const level = document.getElementById('newUserLevel').value;
+            const notes = document.getElementById('newUserNotes').value.trim();
+            const profissional_id = document.getElementById('newUserProfessional').value || null;
+            const preferencesPayload = collectUserPreferencesFromControls('newUserPermissions', level);
+
+            if (!password || password.trim() === '') {
+                alert('Senha e obrigatoria.');
+                return;
+            }
+
+            if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+                alert('Nome de usuario invalido. Use apenas letras, numeros, pontos, hifens e underscores.');
+                return;
+            }
+
+            if (users[username]) {
+                alert('Nome de usuario ja existe. Escolha um nome diferente.');
+                return;
+            }
+
+            const newUser = {
+                level,
+                name,
+                professionalId: profissional_id,
+                preferences: preferencesPayload,
+                permissions: buildEffectiveUserPermissions(level, preferencesPayload),
+                notes: notes || '',
+                isDefault: false,
+                createdBy: currentUser.username,
+                createdAt: new Date().toISOString(),
+                lastLogin: null,
+                isActive: true
+            };
+
+            fetch(apiUrl('/api/usuarios'), {
+                method: 'POST',
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    username,
+                    password,
+                    level,
+                    name,
+                    profissional_id,
+                    preferences: preferencesPayload,
+                    notes,
+                    createdBy: currentUser ? currentUser.username : 'system'
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.success) {
+                    users[username] = newUser;
+                    saveUsers();
+                    clearNewUserForm();
+                    loadUsersTable();
+                    updateUserStats();
+                    showSuccessMessage(`Usuario "${name}" criado com sucesso e salvo no banco!`);
+                } else {
+                    console.error('API error:', data);
+                    alert('Erro ao salvar usuario no servidor: ' + (data && data.error ? data.error : 'Resposta invalida.'));
+                }
+            })
+            .catch(err => {
+                console.error('Fetch error:', err);
+                alert('Erro ao criar usuario no servidor. Tente novamente.');
+            });
+        }
 
         function clearNewUserForm() {
             document.getElementById('newUserName').value = '';
@@ -1487,22 +1723,33 @@
             document.getElementById('newUserLevel').value = '';
             document.getElementById('newUserProfessional').value = '';
             document.getElementById('newUserNotes').value = '';
+            renderUserPermissionControls('newUserPermissions', 'viewer', null);
         }
 
         // Fetch users from backend and merge into local users cache
         function fetchUsersFromServer() {
-            fetch(apiUrl('/api/usuarios'))
+            return fetch(apiUrl('/api/usuarios'), {
+                headers: getAuthenticatedHeaders(false),
+                credentials: 'same-origin'
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.success && Array.isArray(data.users)) {
                         let changed = false;
                         data.users.forEach(u => {
+                            const username = String(u.username || '').toLowerCase();
+                            const userLevel = String(u.level || 'viewer').toLowerCase();
+                            const userPreferences = getUserPreferencesForStorage(userLevel, u.preferences || u.preferencias || {
+                                permissions: u.effectivePermissions || u.permissions
+                            });
                             // Only merge non-sensitive metadata from the server
-                            if (!users[u.username]) {
-                                users[u.username] = {
-                                    level: u.level || 'viewer',
+                            if (!users[username]) {
+                                users[username] = {
+                                    level: userLevel,
                                     name: u.name || '',
                                     professionalId: u.professionalId || null,
+                                    preferences: userPreferences,
+                                    permissions: buildEffectiveUserPermissions(userLevel, userPreferences),
                                     notes: '',
                                     createdAt: u.created_at || null,
                                     lastLogin: u.last_login || u.ultimo_login_em || null,
@@ -1513,16 +1760,18 @@
                                 changed = true;
                             } else {
                                 // update metadata from server
-                                users[u.username].level = u.level || users[u.username].level;
-                                users[u.username].name = u.name || users[u.username].name;
-                                users[u.username].createdAt = u.created_at || users[u.username].createdAt;
-                                users[u.username].lastLogin = u.last_login || u.ultimo_login_em || users[u.username].lastLogin || null;
-                                users[u.username].lastLoginIp = u.ultimo_login_ip || users[u.username].lastLoginIp || null;
+                                users[username].level = userLevel || users[username].level;
+                                users[username].name = u.name || users[username].name;
+                                users[username].preferences = userPreferences;
+                                users[username].permissions = buildEffectiveUserPermissions(users[username].level, userPreferences);
+                                users[username].createdAt = u.created_at || users[username].createdAt;
+                                users[username].lastLogin = u.last_login || u.ultimo_login_em || users[username].lastLogin || null;
+                                users[username].lastLoginIp = u.ultimo_login_ip || users[username].lastLoginIp || null;
                                 if (u.isActive !== undefined || u.is_active !== undefined) {
-                                    users[u.username].isActive = u.isActive !== undefined ? u.isActive : u.is_active;
+                                    users[username].isActive = u.isActive !== undefined ? u.isActive : u.is_active;
                                 }
-                                if ((u.professionalId || u.profissional_id) && !users[u.username].professionalId) {
-                                    users[u.username].professionalId = u.professionalId || u.profissional_id;
+                                if ((u.professionalId || u.profissional_id) && !users[username].professionalId) {
+                                    users[username].professionalId = u.professionalId || u.profissional_id;
                                 }
                                 changed = true;
                             }
@@ -1708,6 +1957,14 @@
             document.getElementById('editUserLevel').value = user.level;
             document.getElementById('editUserProfessional').value = user.professionalId || '';
             document.getElementById('editUserNotes').value = user.notes || '';
+            renderUserPermissionControls('editUserPermissions', user.level, user.preferences || null);
+            if (username === currentUser.username) {
+                const manageSelfCheckbox = document.querySelector('#editUserPermissions [data-user-permission-key="canManageUsers"]');
+                if (manageSelfCheckbox) {
+                    manageSelfCheckbox.checked = true;
+                    manageSelfCheckbox.disabled = true;
+                }
+            }
             
             document.getElementById('editUserModal').classList.add('active');
         }
@@ -1721,6 +1978,10 @@
             const level = document.getElementById('editUserLevel').value;
             const professionalId = document.getElementById('editUserProfessional').value || null;
             const notes = document.getElementById('editUserNotes').value.trim();
+            const preferencesPayload = collectUserPreferencesFromControls('editUserPermissions', level);
+            if (username === currentUser.username && currentUser.level === 'admin') {
+                preferencesPayload.permissions.canManageUsers = true;
+            }
             
             // Editing other users requires manageUsers permission
             if (username !== currentUser.username && !checkPermission('manageUsers')) {
@@ -1737,6 +1998,8 @@
             users[username].name = name;
             users[username].level = level;
             users[username].professionalId = professionalId;
+            users[username].preferences = preferencesPayload;
+            users[username].permissions = buildEffectiveUserPermissions(level, preferencesPayload);
             users[username].notes = notes;
             
             if (username === currentUser.username) {
@@ -1751,14 +2014,16 @@
             users[username].lastModifiedAt = new Date().toISOString();
             
             // Update on backend
-            fetch(`http://127.0.0.1:5000/api/usuarios/${encodeURIComponent(username)}`, {
+            fetch(apiUrl(`/api/usuarios/${encodeURIComponent(username)}`), {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
                 body: JSON.stringify({
                     name: name,
                     password: newPassword || undefined,
                     level: level,
                     professionalId: professionalId,
+                    preferences: preferencesPayload,
                     isActive: users[username].isActive !== false
                 })
             })
@@ -1779,7 +2044,9 @@
             if (username === currentUser.username) {
                 currentUser.name = name;
                 currentUser.level = level;
-                userPermissions = permissions[level];
+                currentUser.preferences = preferencesPayload;
+                currentUser.effectivePermissions = buildEffectiveUserPermissions(level, preferencesPayload);
+                userPermissions = currentUser.effectivePermissions;
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
                 updateHeaderWithUserInfo();
                 updateUIBasedOnPermissions();
@@ -1808,9 +2075,10 @@
             
             if (confirm(`🔄 Deseja ${action} o usuário "${user.name}"?\n\n${newStatus ? 'O usuário poderá fazer login novamente.' : 'O usuário não poderá mais fazer login.'}`)) {
                 // Try to sync with backend
-                fetch(`http://127.0.0.1:5000/api/usuarios/${encodeURIComponent(username)}`, {
+                fetch(apiUrl(`/api/usuarios/${encodeURIComponent(username)}`), {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthenticatedHeaders(true),
+                    credentials: 'same-origin',
                     body: JSON.stringify({ isActive: newStatus })
                 })
                 .then(res => res.json())
@@ -1872,7 +2140,11 @@
             
             if (confirm(confirmMessage)) {
                 // Try delete on backend first
-                fetch(`http://127.0.0.1:5000/api/usuarios/${encodeURIComponent(username)}`, { method: 'DELETE' })
+                fetch(apiUrl(`/api/usuarios/${encodeURIComponent(username)}`), {
+                    method: 'DELETE',
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin'
+                })
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.success) {
@@ -2029,6 +2301,9 @@
         function checkPermission(action) {
             // If permissions not initialized, deny by default
             if (!userPermissions) return false;
+            if (Object.prototype.hasOwnProperty.call(userPermissions, action)) {
+                return !!userPermissions[action];
+            }
             switch(action) {
                 case 'create':
                     return !!userPermissions.canCreate;
@@ -2062,8 +2337,8 @@
                     return !!userPermissions.canViewPatients;
                 case 'exportReport':
                     return !!userPermissions.canExportReport;
-                case 'bulkCancel':
-                    return !!userPermissions.canBulkCancel;
+                case 'viewAudit':
+                    return !!userPermissions.canViewAudit;
                 default:
                     return false;
             }

@@ -2135,6 +2135,11 @@
                                placeholder="Ex: Terapeuta ABA, Supervisor de Equipe, etc.">
                     </div>
                     
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-2">Permissoes personalizadas:</label>
+                        <div id="newUserPermissions" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                    </div>
+
                     <div class="md:col-span-2 flex gap-3">
                         <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex-1">
                             ➕ Criar Usuário
@@ -2247,6 +2252,11 @@
                     <label class="block text-sm font-medium mb-2">📝 Observações:</label>
                     <input type="text" id="editUserNotes" 
                            class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-medium mb-2">Permissoes personalizadas:</label>
+                    <div id="editUserPermissions" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
                 </div>
                 
                 <div class="flex gap-3">
