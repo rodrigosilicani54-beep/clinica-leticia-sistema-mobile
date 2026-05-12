@@ -61,7 +61,7 @@
             "nextRoomDayButton", "roomsRangeLabel", "roomsLastUpdated", "roomsSummary", "roomsList",
             "appointmentSheet", "sheetTime", "sheetPatient", "sheetMeta", "sheetStatus",
             "sheetDate", "sheetSchedule", "sheetProfessional", "sheetType",
-            "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
+            "sheetRecentAudit", "remarkForm", "remarkDateInput", "remarkStartInput", "remarkEndInput",
             "remarkReasonInput", "sheetRemarkNotice", "remarkSubmitButton", "sheetMessage", "apiConfigToggle", "appApiConfigButton",
             "apiConfigSheet", "apiConfigForm", "apiBaseInput", "saveApiBaseButton",
             "testApiBaseButton", "apiConfigMessage", "apiConfigSummary", "clearMobileCacheButton",
@@ -923,12 +923,14 @@
         els.remarkReasonInput.value = "";
         renderAppointmentRemarkNotice(appointment);
         updateStatusActionButtons(appointment);
+        loadSheetRecentAudit(appointment);
         els.appointmentSheet.classList.remove("hidden");
     }
 
     function closeSheet() {
         els.appointmentSheet.classList.add("hidden");
         state.selectedAppointment = null;
+        renderSheetRecentAudit([]);
     }
 
     function updateStatusActionButtons(appointment) {
@@ -954,6 +956,98 @@
             els.sheetRemarkNotice.textContent = `Ja existe uma solicitacao pendente para ${formatDateBR(pendingRemark.newDate)} ${formatTime(pendingRemark.newTime)} - ${formatTime(pendingRemark.newEndTime)}.`;
         } else {
             els.sheetRemarkNotice.textContent = "";
+        }
+    }
+
+    function canViewAppointmentAudit(appointment) {
+        if (!state.user || !appointment) return false;
+        const level = String(state.user.level || "").toLowerCase();
+        return level === "admin" || level === "editor" || hasFullAppointmentStatusAccess() || userOwnsAppointment(appointment);
+    }
+
+    function formatAuditAction(action) {
+        const labels = {
+            criado: "Criado",
+            editado: "Editado",
+            status_alterado: "Status alterado",
+            status_alterado_lote: "Status alterado em lote",
+            bloqueio_liberado: "Bloqueio liberado",
+            excluido: "Excluido",
+            excluido_lote: "Excluido em lote"
+        };
+        return labels[action] || action || "Registro";
+    }
+
+    function formatAuditDetailValue(value) {
+        if (value === null || value === undefined || value === "") return "-";
+        const text = String(value);
+        const dateMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (dateMatch) return `${dateMatch[3]}/${dateMatch[2]}/${dateMatch[1]}`;
+        const timeMatch = text.match(/^(\d{2}):(\d{2})/);
+        if (timeMatch) return `${timeMatch[1]}:${timeMatch[2]}`;
+        return text;
+    }
+
+    function formatAuditDetails(details) {
+        if (!details) return "";
+        if (typeof details === "string") return escapeHtml(details);
+        const changes = details.alteracoes;
+        if (changes && typeof changes === "object") {
+            return Object.entries(changes).map(([field, change]) => {
+                const before = formatAuditDetailValue(change && change.antes);
+                const after = formatAuditDetailValue(change && change.depois);
+                return `${escapeHtml(field)}: ${escapeHtml(before)} -> ${escapeHtml(after)}`;
+            }).join("<br>");
+        }
+        return "";
+    }
+
+    function renderSheetRecentAudit(entries) {
+        if (!els.sheetRecentAudit) return;
+        if (!entries.length) {
+            els.sheetRecentAudit.classList.add("hidden");
+            els.sheetRecentAudit.innerHTML = "";
+            return;
+        }
+        els.sheetRecentAudit.classList.remove("hidden");
+        els.sheetRecentAudit.innerHTML = `
+            <div class="section-heading compact-heading">
+                <h3>Ultimas alteracoes</h3>
+            </div>
+            <div class="recent-audit-list">
+                ${entries.map((entry) => `
+                    <div class="recent-audit-item">
+                        <div class="recent-audit-topline">
+                            <strong>${escapeHtml(formatAuditAction(entry.acao))}</strong>
+                            <span>${entry.criado_em ? escapeHtml(new Date(entry.criado_em).toLocaleString("pt-BR")) : ""}</span>
+                        </div>
+                        <div class="muted-text">Por ${escapeHtml(entry.usuario_nome || entry.usuario_username || "Sistema")}</div>
+                        ${formatAuditDetails(entry.detalhes) ? `<div class="recent-audit-details">${formatAuditDetails(entry.detalhes)}</div>` : ""}
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    }
+
+    async function loadSheetRecentAudit(appointment) {
+        if (!canViewAppointmentAudit(appointment)) {
+            renderSheetRecentAudit([]);
+            return;
+        }
+        const numericId = Number(appointment.id);
+        if (Number.isNaN(numericId) || numericId <= 0) {
+            renderSheetRecentAudit([]);
+            return;
+        }
+        if (els.sheetRecentAudit) {
+            els.sheetRecentAudit.classList.remove("hidden");
+            els.sheetRecentAudit.innerHTML = '<div class="muted-text">Carregando alteracoes...</div>';
+        }
+        try {
+            const data = await apiFetch(`/api/agendamentos/${encodeURIComponent(numericId)}/auditoria?limit=3&order=desc`);
+            renderSheetRecentAudit(data && data.success && Array.isArray(data.auditoria) ? data.auditoria : []);
+        } catch (err) {
+            renderSheetRecentAudit([]);
         }
     }
 

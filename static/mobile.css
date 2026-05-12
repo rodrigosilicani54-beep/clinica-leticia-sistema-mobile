@@ -594,6 +594,46 @@ h3 {
     margin-top: 16px;
 }
 
+.recent-audit-section {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 12px;
+}
+
+.compact-heading h3 {
+    font-size: 0.95rem;
+}
+
+.recent-audit-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.recent-audit-item {
+    border-left: 2px solid #94a3b8;
+    padding-left: 10px;
+}
+
+.recent-audit-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--text);
+    font-size: 0.86rem;
+}
+
+.recent-audit-topline span,
+.recent-audit-details {
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.recent-audit-details {
+    margin-top: 4px;
+}
+
 .section-heading {
     display: grid;
     gap: 3px;

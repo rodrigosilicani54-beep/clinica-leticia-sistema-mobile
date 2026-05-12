@@ -290,7 +290,8 @@
                 canBulkEdit: true,
                 canBulkCancel: true,
                 canManageProfessionals: true,
-                canManageUsers: true
+                canManageUsers: true,
+                canViewAudit: true
             },
             editor: {
                 canView: true,
@@ -308,7 +309,8 @@
                 canBulkEdit: true,
                 canBulkCancel: false,
                 canManageProfessionals: true,
-                canManageUsers: false
+                canManageUsers: false,
+                canViewAudit: false
             },
             viewer: {
                 canView: true,
@@ -326,12 +328,193 @@
                 canBulkEdit: false,
                 canBulkCancel: false,
                 canManageProfessionals: false,
-                canManageUsers: false
+                canManageUsers: false,
+                canViewAudit: false
             }
         };
 
+        function organizeActionCenter() {
+            const header = document.querySelector('.container > div.bg-white.rounded-lg.shadow-lg.p-3.mb-3');
+            if (!header || header.dataset.actionCenterReady === '1') return;
+
+            const legend = header.querySelector('.flex.flex-wrap.gap-2.mb-3.text-xs');
+            const actionBar = Array.from(header.children).find((child) =>
+                child !== legend &&
+                child.classList &&
+                child.classList.contains('flex') &&
+                child.classList.contains('flex-wrap') &&
+                child.classList.contains('gap-2')
+            );
+            if (!actionBar) return;
+
+            header.dataset.actionCenterReady = '1';
+            const allButtons = Array.from(actionBar.querySelectorAll('button'));
+            const byOnclick = (needle) => allButtons.find((button) => String(button.getAttribute('onclick') || '').includes(needle));
+            const byId = (id) => allButtons.find((button) => button.id === id);
+            const userManagementButton = byOnclick('openUserManagementModal');
+            if (userManagementButton && !userManagementButton.id) {
+                userManagementButton.id = 'userManagementButton';
+            }
+
+            const relabel = (button, label) => {
+                if (!button) return null;
+                const badge = button.querySelector('span[id$="Badge"]');
+                button.innerHTML = '';
+                if (badge) {
+                    badge.className = 'hidden absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-red-600 text-white text-[11px] font-bold leading-5 text-center shadow';
+                    button.appendChild(badge);
+                }
+                button.appendChild(document.createTextNode(label));
+                return button;
+            };
+
+            const prepareButton = (button, label, variant = '') => {
+                if (!button) return null;
+                relabel(button, label);
+                button.className = `action-button${variant ? ` ${variant}` : ''}${button.querySelector('span[id$="Badge"]') ? ' relative' : ''}`;
+                return button;
+            };
+
+            const primaryButtons = [
+                prepareButton(byOnclick('showWeeklyView'), 'Agendas', 'primary'),
+                prepareButton(byOnclick('showDailyPanelView'), 'Painel do dia'),
+                prepareButton(byOnclick('openScheduleModal'), 'Agendar', 'strong'),
+                prepareButton(byOnclick('showWaitlistView'), 'Lista de espera')
+            ].filter(Boolean);
+
+            const groups = [
+                {
+                    label: 'Cadastros',
+                    buttons: [
+                        prepareButton(byOnclick('showProfessionalsView'), 'Profissionais'),
+                        prepareButton(byId('btnCreateProfessional'), 'Novo profissional'),
+                        prepareButton(byId('btnCreatePatient'), 'Novo paciente'),
+                        prepareButton(byOnclick('openPatientListModal'), 'Pacientes')
+                    ].filter(Boolean)
+                },
+                {
+                    label: 'Agenda',
+                    buttons: [
+                        prepareButton(byId('btnBulkCancelAppointments'), 'Alteracao em massa', 'danger'),
+                        prepareButton(byOnclick('openRoomsAvailabilityModal'), 'Salas'),
+                        prepareButton(byOnclick('openSmartReschedulingModal'), 'Reagendamento'),
+                        prepareButton(byId('remarkRequestsButton'), 'Remarques'),
+                        prepareButton(byId('remarkNotificationsButton'), 'Notificacoes')
+                    ].filter(Boolean)
+                },
+                {
+                    label: 'Relatorios',
+                    buttons: [
+                        prepareButton(byOnclick('exportReportDirect'), 'Relatorio HPT'),
+                        prepareButton(byOnclick('showReports'), 'Relatorios'),
+                        prepareButton(byId('auditButton'), 'Auditoria')
+                    ].filter(Boolean)
+                },
+                {
+                    label: 'Sistema',
+                    buttons: [
+                        prepareButton(byOnclick('showHomeView'), 'Inicio'),
+                        prepareButton(userManagementButton, 'Usuarios'),
+                        prepareButton(byId('syncCloudButton'), 'Sincronizar nuvem'),
+                        prepareButton(byOnclick('openConfigModal'), 'Config')
+                    ].filter(Boolean)
+                }
+            ];
+
+            const shell = document.createElement('div');
+            shell.className = 'action-center';
+
+            const top = document.createElement('div');
+            top.className = 'action-center-top';
+            top.innerHTML = `
+                <div class="action-center-title">
+                    <strong>Central de acoes</strong>
+                    <span>Atalhos principais primeiro; o restante fica organizado por pastas.</span>
+                </div>
+            `;
+
+            const primaryRow = document.createElement('div');
+            primaryRow.className = 'action-primary-row';
+            primaryButtons.forEach((button) => primaryRow.appendChild(button));
+            top.appendChild(primaryRow);
+            shell.appendChild(top);
+
+            const folderRow = document.createElement('div');
+            folderRow.className = 'action-folder-row';
+
+            groups.forEach((group) => {
+                if (!group.buttons.length) return;
+                const details = document.createElement('details');
+                details.className = 'action-folder';
+                const summary = document.createElement('summary');
+                summary.textContent = group.label;
+                const menu = document.createElement('div');
+                menu.className = 'action-menu';
+                group.buttons.forEach((button) => menu.appendChild(button));
+                details.appendChild(summary);
+                details.appendChild(menu);
+                folderRow.appendChild(details);
+            });
+
+            if (legend) {
+                const details = document.createElement('details');
+                details.className = 'action-folder';
+                const summary = document.createElement('summary');
+                summary.textContent = 'Legenda';
+                const menu = document.createElement('div');
+                menu.className = 'action-menu legend-menu';
+                Array.from(legend.children).forEach((item) => {
+                    item.className = 'legend-chip';
+                    const swatch = item.querySelector('div');
+                    if (swatch) swatch.className = `${swatch.className} legend-swatch`;
+                    menu.appendChild(item);
+                });
+                details.appendChild(summary);
+                details.appendChild(menu);
+                folderRow.appendChild(details);
+                legend.remove();
+            }
+
+            shell.appendChild(folderRow);
+            actionBar.replaceWith(shell);
+
+            const folders = Array.from(shell.querySelectorAll('.action-folder'));
+            folders.forEach((folder) => {
+                folder.addEventListener('toggle', () => {
+                    if (!folder.open) return;
+                    folders.forEach((other) => {
+                        if (other !== folder) other.removeAttribute('open');
+                    });
+                });
+            });
+            document.addEventListener('click', (event) => {
+                if (shell.contains(event.target)) return;
+                folders.forEach((folder) => folder.removeAttribute('open'));
+            });
+        }
+
+        function updateHomeClock() {
+            const dateEl = document.getElementById('homeClockDate');
+            const timeEl = document.getElementById('homeClockTime');
+            if (!dateEl || !timeEl) return;
+            const now = new Date();
+            dateEl.textContent = now.toLocaleDateString('pt-BR', {
+                weekday: 'long',
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            });
+            timeEl.textContent = now.toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
         // Initialize the system
         document.addEventListener('DOMContentLoaded', function() {
+            organizeActionCenter();
+            updateHomeClock();
+            setInterval(updateHomeClock, 1000);
             checkAuthentication();
         });
 
@@ -1092,7 +1275,9 @@
                     buttonText.includes('gerenciar usuÃ¡rios') ||
                     button.id === 'btnCreateProfessional' ||
                     button.id === 'btnCreatePatient' ||
-                    button.id === 'btnBulkCancelAppointments';
+                    button.id === 'btnBulkCancelAppointments' ||
+                    button.id === 'userManagementButton' ||
+                    button.id === 'auditButton';
                 if (isPermissionControlled) {
                     button.style.display = '';
                 }
@@ -1128,6 +1313,9 @@
                 if (button.id === 'btnBulkCancelAppointments' && !userPermissions.canBulkCancel) {
                     button.style.display = 'none';
                 }
+                if (button.id === 'userManagementButton' && !userPermissions.canManageUsers) {
+                    button.style.display = 'none';
+                }
                 
                 if (buttonText.includes('profissionais') && !userPermissions.canView) {
                     button.style.display = 'none';
@@ -1150,6 +1338,10 @@
             const remarkRequestsButton = document.getElementById('remarkRequestsButton');
             if (remarkRequestsButton) {
                 remarkRequestsButton.style.display = canAuthorizeRemarkRequests() ? 'inline-block' : 'none';
+            }
+            const auditButton = document.getElementById('auditButton');
+            if (auditButton) {
+                auditButton.style.display = userPermissions.canViewAudit ? 'inline-block' : 'none';
             }
             updateRemarkBadges();
             updateRemarkConfigUi();
@@ -1313,8 +1505,10 @@
                                     professionalId: u.professionalId || null,
                                     notes: '',
                                     createdAt: u.created_at || null,
+                                    lastLogin: u.last_login || u.ultimo_login_em || null,
+                                    lastLoginIp: u.ultimo_login_ip || null,
                                     isDefault: false,
-                                    isActive: true
+                                    isActive: u.isActive !== undefined ? u.isActive : (u.is_active !== undefined ? u.is_active : true)
                                 };
                                 changed = true;
                             } else {
@@ -1322,6 +1516,11 @@
                                 users[u.username].level = u.level || users[u.username].level;
                                 users[u.username].name = u.name || users[u.username].name;
                                 users[u.username].createdAt = u.created_at || users[u.username].createdAt;
+                                users[u.username].lastLogin = u.last_login || u.ultimo_login_em || users[u.username].lastLogin || null;
+                                users[u.username].lastLoginIp = u.ultimo_login_ip || users[u.username].lastLoginIp || null;
+                                if (u.isActive !== undefined || u.is_active !== undefined) {
+                                    users[u.username].isActive = u.isActive !== undefined ? u.isActive : u.is_active;
+                                }
                                 if ((u.professionalId || u.profissional_id) && !users[u.username].professionalId) {
                                     users[u.username].professionalId = u.professionalId || u.profissional_id;
                                 }
@@ -1391,7 +1590,7 @@
                 const canDelete = !user.isDefault && !isCurrentUser;
                 
                 const createdDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('pt-BR') : 'N/A';
-                const lastLoginDate = user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('pt-BR') : 'Nunca';
+                const lastLoginDate = user.lastLogin ? new Date(user.lastLogin).toLocaleString('pt-BR') : 'Nunca';
                 
                 tableHtml += `
                     <tr class="hover:bg-gray-50 ${isCurrentUser ? 'bg-blue-50' : ''}">
@@ -1416,7 +1615,10 @@
                             ${createdDate}
                             ${user.createdBy ? `<div class="text-xs">por ${user.createdBy}</div>` : ''}
                         </td>
-                        <td class="px-4 py-3 text-sm text-gray-500">${lastLoginDate}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">
+                            ${lastLoginDate}
+                            ${user.lastLoginIp ? `<div class="text-xs">IP ${user.lastLoginIp}</div>` : ''}
+                        </td>
                         <td class="px-4 py-3">
                             <div class="flex space-x-2">
                                 ${canEdit ? `
@@ -1879,6 +2081,7 @@
                 bulkCancel: 'cancelar agendamentos em massa',
                 manageProfessionals: 'gerenciar profissionais',
                 manageUsers: 'gerenciar usuários',
+                viewAudit: 'visualizar auditoria',
                 view: 'visualizar',
                 viewPatients: 'visualizar pacientes'
             }; 
@@ -1968,6 +2171,17 @@
             generateReports();
         }
 
+        function showAuditView() {
+            if (!currentUser || !userPermissions?.canViewAudit) {
+                showPermissionDenied('viewAudit');
+                return;
+            }
+            hideAllViews();
+            document.getElementById('auditView').style.display = 'block';
+            currentView = 'audit';
+            loadAuditReport();
+        }
+
         async function showWeeklyView() {
             hideAllViews();
             document.getElementById('weeklyView').style.display = 'block';
@@ -2034,7 +2248,158 @@
             document.getElementById('scheduleView').style.display = 'none';
             document.getElementById('professionalsView').style.display = 'none';
             document.getElementById('reportsView').style.display = 'none';
+            const auditView = document.getElementById('auditView');
+            if (auditView) auditView.style.display = 'none';
             document.getElementById('weeklyView').style.display = 'none';
+        }
+
+        let auditReloadTimer = null;
+
+        function scheduleAuditReload() {
+            clearTimeout(auditReloadTimer);
+            auditReloadTimer = setTimeout(loadAuditReport, 350);
+        }
+
+        function getAuditInputValue(id) {
+            return String(document.getElementById(id)?.value || '').trim();
+        }
+
+        function clearAuditFilters() {
+            ['auditSearchInput', 'auditEntityFilter', 'auditActionFilter', 'auditStartInput', 'auditEndInput'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            const deletedOnly = document.getElementById('auditDeletedOnlyInput');
+            if (deletedOnly) deletedOnly.checked = false;
+            loadAuditReport();
+        }
+
+        async function loadAuditReport() {
+            const container = document.getElementById('auditReportContent');
+            const summary = document.getElementById('auditSummary');
+            if (!container) return;
+            if (!currentUser || !userPermissions?.canViewAudit) {
+                container.innerHTML = '<div class="p-6 text-center text-red-700 bg-red-50">Acesso restrito a administradores.</div>';
+                return;
+            }
+
+            const params = new URLSearchParams({ limit: '200' });
+            const search = getAuditInputValue('auditSearchInput');
+            const entity = getAuditInputValue('auditEntityFilter');
+            const action = getAuditInputValue('auditActionFilter');
+            const start = getAuditInputValue('auditStartInput');
+            const end = getAuditInputValue('auditEndInput');
+            const deletedOnly = document.getElementById('auditDeletedOnlyInput')?.checked;
+
+            if (search) params.set('q', search);
+            if (entity) params.set('entidade_tipo', entity);
+            if (start) params.set('inicio', start);
+            if (end) params.set('fim', end);
+            if (deletedOnly || action === 'excluido') {
+                params.set('deleted', '1');
+            } else if (action) {
+                params.set('acao', action);
+            }
+
+            container.innerHTML = '<div class="p-6 text-center text-gray-500">Carregando auditoria...</div>';
+            try {
+                const response = await fetch(apiUrl(`/api/auditoria?${params.toString()}`), {
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin'
+                });
+                const data = await response.json();
+                if (!data || !data.success) {
+                    throw new Error(data?.error || 'Nao foi possivel carregar a auditoria.');
+                }
+                const logs = Array.isArray(data.logs) ? data.logs : [];
+                if (summary) {
+                    summary.textContent = `${logs.length} registro(s) encontrados`;
+                }
+                renderAuditReport(logs);
+            } catch (err) {
+                container.innerHTML = `<div class="p-6 text-center text-red-700 bg-red-50">${escapeAuditHtml(err.message || 'Erro ao carregar auditoria.')}</div>`;
+            }
+        }
+
+        function formatAuditEntity(entity) {
+            const labels = {
+                agendamento: 'Agendamento',
+                usuario: 'Usuario',
+                paciente: 'Paciente',
+                profissional: 'Profissional'
+            };
+            return labels[entity] || entity || 'Registro';
+        }
+
+        function formatAuditPayloadSummary(payload) {
+            if (!payload) return '';
+            if (typeof payload === 'string') return escapeAuditHtml(payload);
+            if (payload.alteracoes) return formatAuditDetails(payload);
+            const preferred = ['paciente', 'profissional', 'data', 'hora_inicio', 'hora_fim', 'tipo_atendimento', 'status', 'level', 'name', 'username'];
+            const entries = [];
+            preferred.forEach(key => {
+                if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') {
+                    entries.push([key, payload[key]]);
+                }
+            });
+            Object.entries(payload).forEach(([key, value]) => {
+                if (entries.length >= 8) return;
+                if (preferred.includes(key) || value === undefined || value === null || value === '') return;
+                if (typeof value === 'object') return;
+                entries.push([key, value]);
+            });
+            return entries.map(([key, value]) => {
+                return `${escapeAuditHtml(formatAuditFieldLabel(key))}: ${escapeAuditHtml(formatAuditValue(key, value))}`;
+            }).join('<br>');
+        }
+
+        function getAuditLogDetails(log) {
+            const details = log.detalhes || {};
+            if (details.detalhes) {
+                const nested = formatAuditPayloadSummary(details.detalhes);
+                if (nested) return nested;
+            }
+            if (details.alteracoes) return formatAuditDetails(details);
+            if (log.dados_antes && String(log.acao || '').includes('exclu')) {
+                return formatAuditPayloadSummary(log.dados_antes);
+            }
+            if (log.dados_depois && String(log.acao || '').includes('criado')) {
+                return formatAuditPayloadSummary(log.dados_depois);
+            }
+            return formatAuditPayloadSummary(details);
+        }
+
+        function renderAuditReport(logs) {
+            const container = document.getElementById('auditReportContent');
+            if (!container) return;
+            if (!logs.length) {
+                container.innerHTML = '<div class="p-6 text-center text-gray-500">Nenhum registro encontrado com os filtros atuais.</div>';
+                return;
+            }
+            container.innerHTML = `
+                <div class="divide-y divide-gray-200 bg-white">
+                    ${logs.map(log => {
+                        const dateLabel = log.criado_em ? new Date(log.criado_em).toLocaleString('pt-BR') : '';
+                        const details = getAuditLogDetails(log);
+                        const entity = `${formatAuditEntity(log.entidade_tipo)}${log.entidade_id ? ` #${escapeAuditHtml(log.entidade_id)}` : ''}`;
+                        return `
+                            <div class="p-4 hover:bg-gray-50">
+                                <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                        <div class="font-semibold text-gray-900">${escapeAuditHtml(formatAuditAction(log.acao))}</div>
+                                        <div class="text-sm text-gray-600">${escapeAuditHtml(entity)}${log.entidade_rotulo ? ` - ${escapeAuditHtml(log.entidade_rotulo)}` : ''}</div>
+                                    </div>
+                                    <div class="text-sm text-gray-500 md:text-right">
+                                        <div>${escapeAuditHtml(dateLabel)}</div>
+                                        <div>Por ${escapeAuditHtml(log.usuario_nome || log.usuario_username || 'Sistema')}</div>
+                                    </div>
+                                </div>
+                                ${details ? `<div class="mt-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">${details}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
         }
 
         function getCurrentUserProfessionalId() {
@@ -4810,6 +5175,7 @@
             document.getElementById('scheduleModalTitle').textContent = 'Agendar Consulta';
             document.getElementById('appointmentId').value = '';
             document.getElementById('deleteAppointmentBtn').style.display = 'none';
+            resetAppointmentRecentAudit();
             clearScheduleForm();
             setAppointmentSavingState(false);
             await ensureProfessionalsLoaded();
@@ -4829,6 +5195,7 @@
             document.getElementById('scheduleModalTitle').textContent = 'Novo Agendamento';
             document.getElementById('appointmentId').value = '';
             document.getElementById('deleteAppointmentBtn').style.display = 'none';
+            resetAppointmentRecentAudit();
             clearScheduleForm();
             setAppointmentSavingState(false);
             await ensureProfessionalsLoaded();
@@ -4919,6 +5286,7 @@
             // Show action options section
             showAppointmentActionOptions(appointment);
             updateAppointmentAuditTabVisibility(appointment);
+            loadAppointmentRecentAudit(appointment.id);
             switchAppointmentTab('details');
             
             document.getElementById('scheduleModal').classList.add('active');
@@ -5628,6 +5996,70 @@
             }
         }
 
+        function resetAppointmentRecentAudit() {
+            const recent = document.getElementById('appointmentRecentAudit');
+            if (!recent) return;
+            recent.classList.add('hidden');
+            recent.innerHTML = '';
+        }
+
+        function renderAppointmentRecentAudit(entries) {
+            const recent = document.getElementById('appointmentRecentAudit');
+            if (!recent) return;
+            if (!entries.length) {
+                recent.classList.add('hidden');
+                recent.innerHTML = '';
+                return;
+            }
+            recent.classList.remove('hidden');
+            recent.innerHTML = `
+                <div class="font-semibold text-gray-800 mb-2">Ultimas 3 alteracoes</div>
+                <div class="space-y-2">
+                    ${entries.map(entry => {
+                        const details = formatAuditDetails(entry.detalhes);
+                        return `
+                            <div class="border-l-2 border-gray-300 pl-3">
+                                <div class="flex items-start justify-between gap-2">
+                                    <span class="font-medium">${escapeAuditHtml(formatAuditAction(entry.acao))}</span>
+                                    <span class="text-xs text-gray-500">${entry.criado_em ? new Date(entry.criado_em).toLocaleString('pt-BR') : ''}</span>
+                                </div>
+                                <div class="text-xs text-gray-600">Por ${escapeAuditHtml(entry.usuario_nome || entry.usuario_username || 'Sistema')}</div>
+                                ${details ? `<div class="text-xs text-gray-600 mt-1">${details}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function loadAppointmentRecentAudit(appointmentId) {
+            const recent = document.getElementById('appointmentRecentAudit');
+            const appointment = appointments.find(a => String(a.id) === String(appointmentId));
+            if (!recent || !canViewAppointmentAudit(appointment)) {
+                resetAppointmentRecentAudit();
+                return;
+            }
+            const numericId = Number(appointmentId);
+            if (Number.isNaN(numericId) || numericId <= 0) {
+                resetAppointmentRecentAudit();
+                return;
+            }
+            recent.classList.remove('hidden');
+            recent.innerHTML = '<div class="text-gray-500">Carregando atividade recente...</div>';
+            fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}/auditoria?limit=3&order=desc`, {
+                headers: getAuthenticatedHeaders(false)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data || !data.success) {
+                    resetAppointmentRecentAudit();
+                    return;
+                }
+                renderAppointmentRecentAudit(Array.isArray(data.auditoria) ? data.auditoria : []);
+            })
+            .catch(() => resetAppointmentRecentAudit());
+        }
+
         function updateAppointmentAuditTabVisibility(appointment) {
             const auditBtn = document.getElementById('appointmentTabAuditBtn');
             const auditTab = document.getElementById('appointmentAuditTab');
@@ -5654,7 +6086,23 @@
                 status_alterado: 'Status alterado',
                 status_alterado_lote: 'Status alterado em lote',
                 bloqueio_liberado: 'Bloqueio liberado',
-                excluido: 'Excluido'
+                excluido: 'Excluido',
+                excluido_lote: 'Excluido em lote',
+                login_sucesso: 'Login realizado',
+                login_falha: 'Tentativa de login falhou',
+                logout: 'Logout',
+                usuario_criado: 'Usuario criado',
+                usuario_atualizado: 'Usuario atualizado',
+                usuario_inativado: 'Usuario inativado',
+                usuario_reativado: 'Usuario reativado',
+                usuario_excluido: 'Usuario excluido',
+                paciente_criado: 'Paciente criado',
+                paciente_atualizado: 'Paciente atualizado',
+                paciente_inativado: 'Paciente inativado',
+                paciente_excluido: 'Paciente excluido',
+                profissional_criado: 'Profissional criado',
+                profissional_atualizado: 'Profissional atualizado',
+                profissional_excluido: 'Profissional excluido'
             };
             return labels[action] || action || 'Registro';
         }
@@ -5685,6 +6133,7 @@
             if (field === 'data') return formatAuditDate(value);
             if (field === 'hora_inicio' || field === 'hora_fim') return formatAuditTime(value);
             if (field === 'sala_id') return getRoomName(value) || (value ? `Sala ${value}` : 'Sem sala');
+            if (typeof value === 'boolean') return value ? 'Sim' : 'Nao';
             return value || '-';
         }
 
@@ -5695,7 +6144,14 @@
                 tipo_atendimento: 'Tipo de atendimento',
                 data: 'Data',
                 sala_id: 'Sala',
-                quantidade_sessoes: 'Quantidade de sessoes'
+                quantidade_sessoes: 'Quantidade de sessoes',
+                username: 'Usuario',
+                name: 'Nome',
+                level: 'Nivel',
+                is_active: 'Status',
+                profissional_id: 'Profissional',
+                telefone: 'Telefone',
+                convenio: 'Convenio'
             };
             return labels[field] || field;
         }

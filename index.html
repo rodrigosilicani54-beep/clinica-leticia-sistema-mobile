@@ -82,6 +82,189 @@
             align-items: center;
             justify-content: center;
         }
+        .action-center {
+            display: grid;
+            gap: 12px;
+        }
+        .action-center-top {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .action-center-title {
+            display: grid;
+            gap: 2px;
+        }
+        .action-center-title strong {
+            color: #111827;
+            font-size: 15px;
+        }
+        .action-center-title span {
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .action-primary-row,
+        .action-folder-row,
+        .action-menu {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .action-button,
+        .action-folder > summary {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #1f2937;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1;
+            padding: 10px 12px;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+            min-height: 38px;
+        }
+        .action-button:hover,
+        .action-folder > summary:hover {
+            background: #f9fafb;
+            border-color: #9ca3af;
+        }
+        .action-button.primary {
+            background: #0f766e;
+            border-color: #0f766e;
+            color: #ffffff;
+        }
+        .action-button.primary:hover {
+            background: #115e59;
+        }
+        .action-button.strong {
+            background: #111827;
+            border-color: #111827;
+            color: #ffffff;
+        }
+        .action-button.strong:hover {
+            background: #030712;
+        }
+        .action-button.subtle {
+            background: #f8fafc;
+        }
+        .action-button.danger {
+            color: #991b1b;
+            border-color: #fecaca;
+            background: #fff7f7;
+        }
+        .action-folder {
+            position: relative;
+        }
+        .action-folder > summary {
+            list-style: none;
+            cursor: pointer;
+            user-select: none;
+        }
+        .action-folder > summary::-webkit-details-marker {
+            display: none;
+        }
+        .action-folder > summary::after {
+            content: " v";
+            color: #6b7280;
+            font-weight: 800;
+        }
+        .action-folder[open] > summary {
+            background: #eef2ff;
+            border-color: #c7d2fe;
+            color: #3730a3;
+        }
+        .action-folder[open] > summary::after {
+            content: " ^";
+        }
+        .action-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 120;
+            min-width: min(92vw, 420px);
+            max-width: min(92vw, 560px);
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #ffffff;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+        }
+        .action-folder:last-child .action-menu {
+            left: auto;
+            right: 0;
+        }
+        .legend-menu {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            min-width: min(92vw, 520px);
+        }
+        .legend-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #374151;
+            font-size: 12px;
+            min-width: 0;
+        }
+        .legend-chip span:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .legend-swatch {
+            flex: 0 0 auto;
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+        }
+        .home-clock {
+            display: grid;
+            gap: 6px;
+            color: #111827;
+        }
+        .home-clock-date {
+            color: #4b5563;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .home-clock-time {
+            font-size: clamp(36px, 7vw, 76px);
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: 0;
+        }
+        @media (max-width: 760px) {
+            .action-center-top,
+            .action-primary-row,
+            .action-folder-row {
+                align-items: stretch;
+            }
+            .action-button,
+            .action-folder > summary {
+                width: 100%;
+                justify-content: center;
+                text-align: center;
+            }
+            .action-folder {
+                width: 100%;
+            }
+            .action-menu {
+                position: static;
+                margin-top: 8px;
+                min-width: 0;
+                width: 100%;
+                box-shadow: none;
+            }
+            .legend-menu {
+                grid-template-columns: 1fr;
+                min-width: 0;
+            }
+        }
         .schedule-grid {
             display: grid;
             grid-template-columns: 60px repeat(6, 1fr);
@@ -379,6 +562,9 @@
                 <button onclick="openUserManagementModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
                     👥 Gerenciar Usuários
                 </button>
+                <button id="auditButton" onclick="showAuditView()" class="bg-gray-900 hover:bg-black text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                    Auditoria
+                </button>
                 <button id="syncCloudButton" onclick="openSyncModal()" class="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors" style="display: none;">
                     ☁️ Sincronizar Nuvem
                 </button>
@@ -393,24 +579,10 @@
             <!-- Home View -->
             <div id="homeView" class="bg-white rounded-lg shadow-lg p-6">
                 <div class="min-h-[58vh] flex flex-col items-center justify-center text-center">
-                    <img src="logo.png" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-6">
-                    <div class="mb-8"></div>
-                    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 w-full max-w-5xl">
-                        <button onclick="showWeeklyView()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
-                            Agendas
-                        </button>
-                        <button onclick="showDailyPanelView()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
-                            Painel do Dia
-                        </button>
-                        <button onclick="showWaitlistView()" class="bg-violet-700 hover:bg-violet-800 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
-                            Lista de Espera
-                        </button>
-                        <button onclick="openScheduleModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
-                            Novo Agendamento
-                        </button>
-                        <button onclick="showProfessionalsView()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg text-sm font-semibold transition-colors">
-                            Profissionais
-                        </button>
+                    <img src="logo.png" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-8">
+                    <div class="home-clock" aria-live="polite">
+                        <div id="homeClockDate" class="home-clock-date"></div>
+                        <div id="homeClockTime" class="home-clock-time"></div>
                     </div>
                 </div>
             </div>
@@ -642,6 +814,70 @@
             <div id="reportsView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Relatórios</h2>
                 <div id="reportsContent" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+            </div>
+
+            <!-- Audit View -->
+            <div id="auditView" class="bg-white rounded-lg shadow-lg p-4" style="display: none;">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">Auditoria</h2>
+                        <p class="text-sm text-gray-600">Rastro de logins, agendamentos, usuarios e exclusoes.</p>
+                    </div>
+                    <button type="button" onclick="loadAuditReport()" class="bg-gray-900 hover:bg-black text-white px-4 py-2 rounded text-sm font-medium">
+                        Atualizar
+                    </button>
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <div class="xl:col-span-2">
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Busca</label>
+                        <input id="auditSearchInput" type="text" oninput="scheduleAuditReload()" placeholder="Paciente, usuario, ID ou detalhe..." class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-gray-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Modulo</label>
+                        <select id="auditEntityFilter" onchange="loadAuditReport()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-gray-500">
+                            <option value="">Todos</option>
+                            <option value="agendamento">Agendamentos</option>
+                            <option value="usuario">Usuarios</option>
+                            <option value="paciente">Pacientes</option>
+                            <option value="profissional">Profissionais</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Acao</label>
+                        <select id="auditActionFilter" onchange="loadAuditReport()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-gray-500">
+                            <option value="">Todas</option>
+                            <option value="login_sucesso">Login</option>
+                            <option value="criado">Criado</option>
+                            <option value="editado">Editado</option>
+                            <option value="status_alterado">Status alterado</option>
+                            <option value="excluido">Excluido</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Inicio</label>
+                        <input id="auditStartInput" type="date" onchange="loadAuditReport()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-gray-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium mb-1 text-gray-600">Fim</label>
+                        <input id="auditEndInput" type="date" onchange="loadAuditReport()" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-gray-500">
+                    </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input id="auditDeletedOnlyInput" type="checkbox" onchange="loadAuditReport()" class="w-4 h-4">
+                        Mostrar somente excluidos
+                    </label>
+                    <button type="button" onclick="clearAuditFilters()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded text-sm font-medium">
+                        Limpar filtros
+                    </button>
+                    <div id="auditSummary" class="text-sm text-gray-500"></div>
+                </div>
+
+                <div id="auditReportContent" class="mt-5 rounded-lg border border-gray-200 overflow-hidden">
+                    <div class="p-6 text-center text-gray-500">Carregando auditoria...</div>
+                </div>
             </div>
 
             <!-- Weekly View -->
@@ -1794,6 +2030,8 @@
                     <textarea id="observations" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" rows="3"></textarea>
                 </div>
 
+                <div id="appointmentRecentAudit" class="mb-4 hidden rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700"></div>
+
                 <div class="mb-4 flex flex-wrap gap-2">
                     <button type="button" id="appointmentTabDetailsBtn" onclick="switchAppointmentTab('details')" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium">
                         Detalhes
@@ -2203,7 +2441,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260510-cache-settings"></script>
+    <script src="static/app.js?v=20260511-home-clock"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();

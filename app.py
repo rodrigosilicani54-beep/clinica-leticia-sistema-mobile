@@ -8,6 +8,7 @@ from db import get_connection
 import threading
 from flask import Flask, request, jsonify, send_file, send_from_directory, session
 from flask_cors import CORS
+from psycopg2.extras import Json
 from werkzeug.security import check_password_hash, generate_password_hash
 from db import get_connection
 import unicodedata
@@ -1570,6 +1571,212 @@ def serialize_audit_value(value):
     return value
 
 
+def normalize_audit_payload(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return str(value)
+
+
+def ensure_usuarios_audit_columns(cur):
+    user_cols = get_table_columns_cached(cur, 'usuarios')
+    changed = False
+    if 'ultimo_login_em' not in user_cols:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_em TIMESTAMP")
+        user_cols.add('ultimo_login_em')
+        changed = True
+    if 'ultimo_login_ip' not in user_cols:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_ip VARCHAR(80)")
+        user_cols.add('ultimo_login_ip')
+        changed = True
+    if 'ultimo_login_user_agent' not in user_cols:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_user_agent TEXT")
+        user_cols.add('ultimo_login_user_agent')
+        changed = True
+    if changed:
+        with TABLE_COLUMNS_CACHE_LOCK:
+            TABLE_COLUMNS_CACHE['usuarios'] = user_cols
+    return user_cols
+
+
+def ensure_audit_logs_table(cur):
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id SERIAL PRIMARY KEY,
+            acao VARCHAR(120) NOT NULL,
+            entidade_tipo VARCHAR(80) NOT NULL,
+            entidade_id VARCHAR(120),
+            entidade_rotulo TEXT,
+            usuario_nome VARCHAR(255),
+            usuario_username VARCHAR(255),
+            dados_antes JSONB,
+            dados_depois JSONB,
+            detalhes JSONB,
+            ip VARCHAR(80),
+            user_agent TEXT,
+            criado_em TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entidade_rotulo TEXT")
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS dados_antes JSONB")
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS dados_depois JSONB")
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS detalhes JSONB")
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(80)")
+    cur.execute("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent TEXT")
+
+
+def get_request_audit_context():
+    try:
+        forwarded = request.headers.get('X-Forwarded-For', '')
+        ip = forwarded.split(',')[0].strip() if forwarded else request.remote_addr
+        return {
+            'ip': ip,
+            'user_agent': request.headers.get('User-Agent')
+        }
+    except Exception:
+        return {'ip': None, 'user_agent': None}
+
+
+def build_audit_changes(before_data, after_data, fields=None, exclude_fields=None):
+    before_data = before_data or {}
+    after_data = after_data or {}
+    exclude_fields = set(exclude_fields or [])
+    if fields is None:
+        fields = sorted((set(before_data.keys()) | set(after_data.keys())) - exclude_fields)
+    changes = {}
+    for field_name in fields:
+        if field_name in exclude_fields:
+            continue
+        old_value = serialize_audit_value(before_data.get(field_name))
+        new_value = serialize_audit_value(after_data.get(field_name))
+        if str(old_value or '') != str(new_value or ''):
+            changes[field_name] = {
+                'antes': old_value,
+                'depois': new_value
+            }
+    return changes
+
+
+def insert_audit_log(
+    cur,
+    acao,
+    entidade_tipo,
+    entidade_id=None,
+    entidade_rotulo=None,
+    actor=None,
+    dados_antes=None,
+    dados_depois=None,
+    detalhes=None,
+    ip=None,
+    user_agent=None
+):
+    ensure_audit_logs_table(cur)
+    actor = actor or {'name': 'Sistema', 'username': None}
+    request_context = get_request_audit_context()
+    cur.execute("""
+        INSERT INTO audit_logs
+            (acao, entidade_tipo, entidade_id, entidade_rotulo, usuario_nome, usuario_username,
+             dados_antes, dados_depois, detalhes, ip, user_agent)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        acao,
+        entidade_tipo,
+        str(entidade_id) if entidade_id is not None else None,
+        entidade_rotulo,
+        actor.get('name') or actor.get('username') or 'Sistema',
+        actor.get('username'),
+        Json(normalize_audit_payload(dados_antes)) if dados_antes is not None else None,
+        Json(normalize_audit_payload(dados_depois)) if dados_depois is not None else None,
+        Json(normalize_audit_payload(detalhes)) if detalhes is not None else None,
+        ip if ip is not None else request_context.get('ip'),
+        user_agent if user_agent is not None else request_context.get('user_agent')
+    ))
+
+
+def record_audit_log_standalone(
+    acao,
+    entidade_tipo,
+    entidade_id=None,
+    entidade_rotulo=None,
+    actor=None,
+    dados_antes=None,
+    dados_depois=None,
+    detalhes=None
+):
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        insert_audit_log(
+            cur,
+            acao,
+            entidade_tipo,
+            entidade_id=entidade_id,
+            entidade_rotulo=entidade_rotulo,
+            actor=actor,
+            dados_antes=dados_antes,
+            dados_depois=dados_depois,
+            detalhes=detalhes
+        )
+        conn.commit()
+    except Exception as e:
+        print('Erro ao gravar auditoria avulsa:', e)
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+def build_agendamento_audit_payload(acao, detalhes, status_anterior=None, status_novo=None):
+    parsed_details = normalize_audit_payload(detalhes)
+    dados_antes = None
+    dados_depois = None
+    if isinstance(parsed_details, dict):
+        if str(acao or '').startswith('excluido'):
+            dados_antes = parsed_details
+        elif acao == 'criado':
+            dados_depois = parsed_details
+        elif isinstance(parsed_details.get('alteracoes'), dict):
+            dados_antes = {
+                field: change.get('antes')
+                for field, change in parsed_details['alteracoes'].items()
+                if isinstance(change, dict)
+            }
+            dados_depois = {
+                field: change.get('depois')
+                for field, change in parsed_details['alteracoes'].items()
+                if isinstance(change, dict)
+            }
+    general_details = {
+        'status_anterior': status_anterior,
+        'status_novo': status_novo,
+        'detalhes': parsed_details
+    }
+    return dados_antes, dados_depois, general_details
+
+
+def build_entity_label(*parts):
+    clean_parts = [str(part).strip() for part in parts if part not in (None, '') and str(part).strip()]
+    return ' - '.join(clean_parts) if clean_parts else None
+
+
 def build_audit_user(data=None, authenticated_user=None, fallback_name=None):
     data = data or {}
     if authenticated_user:
@@ -1593,6 +1800,7 @@ def build_audit_user(data=None, authenticated_user=None, fallback_name=None):
 def insert_agendamento_audit(cur, agendamento_id, acao, user=None, status_anterior=None, status_novo=None, detalhes=None):
     ensure_agendamento_auditoria_table(cur)
     user = user or {'name': 'Sistema', 'username': None}
+    original_detalhes = detalhes
     if detalhes is not None and not isinstance(detalhes, str):
         detalhes = json.dumps(detalhes, ensure_ascii=False, default=str)
     cur.execute("""
@@ -1608,6 +1816,34 @@ def insert_agendamento_audit(cur, agendamento_id, acao, user=None, status_anteri
         user.get('username'),
         detalhes
     ))
+    try:
+        parsed_details = normalize_audit_payload(original_detalhes if original_detalhes is not None else detalhes)
+        dados_antes, dados_depois, general_details = build_agendamento_audit_payload(
+            acao,
+            parsed_details,
+            status_anterior=status_anterior,
+            status_novo=status_novo
+        )
+        entity_label = None
+        if isinstance(parsed_details, dict):
+            entity_label = build_entity_label(
+                parsed_details.get('paciente'),
+                parsed_details.get('data'),
+                parsed_details.get('hora_inicio')
+            )
+        insert_audit_log(
+            cur,
+            acao,
+            'agendamento',
+            entidade_id=agendamento_id,
+            entidade_rotulo=entity_label,
+            actor=user,
+            dados_antes=dados_antes,
+            dados_depois=dados_depois,
+            detalhes=general_details
+        )
+    except Exception as e:
+        print('Erro ao espelhar auditoria de agendamento no log geral:', e)
 
 
 def user_can_authorize_remarque(cur, user):
@@ -1850,6 +2086,10 @@ def create_performance_indexes(cur):
         "CREATE INDEX IF NOT EXISTS idx_remarque_status_solicitado_em ON remarque_solicitacoes (status, solicitado_em DESC)",
         "CREATE INDEX IF NOT EXISTS idx_remarque_agendamento_status_autorizado ON remarque_solicitacoes (agendamento_id, status, autorizado_em DESC)",
         "CREATE INDEX IF NOT EXISTS idx_agendamento_auditoria_agendamento_em ON agendamento_auditoria (agendamento_id, criado_em DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_criado_em ON audit_logs (criado_em DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_entidade ON audit_logs (entidade_tipo, entidade_id, criado_em DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_usuario ON audit_logs (usuario_username, criado_em DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_logs_acao ON audit_logs (acao, criado_em DESC)",
         "CREATE INDEX IF NOT EXISTS idx_lista_espera_status_prioridade ON lista_espera (status, prioridade, criado_em)",
         "CREATE INDEX IF NOT EXISTS idx_lista_espera_paciente ON lista_espera (paciente_id)"
     ]
@@ -1866,6 +2106,8 @@ def ensure_performance_indexes_background():
         ensure_remarque_table_cached(cur, force=True)
         ensure_lista_espera_table(cur, force=True)
         ensure_agendamento_auditoria_table(cur)
+        ensure_audit_logs_table(cur)
+        ensure_usuarios_audit_columns(cur)
         appointment_cols = ensure_salas_schema(cur)
         appointment_cols = migrate_existing_agendamento_links(
             cur,
@@ -2019,6 +2261,22 @@ def criar_usuario():
             VALUES ({placeholders}, NOW())
         """, tuple(values))
 
+        insert_audit_log(
+            cur,
+            'usuario_criado',
+            'usuario',
+            entidade_id=username,
+            entidade_rotulo=name or username,
+            actor=authenticated_user,
+            dados_depois={
+                'username': username,
+                'name': name,
+                'level': level,
+                'profissional_id': profissional_id,
+                'is_active': True
+            }
+        )
+
         conn.commit()
         cur.close()
         conn.close()
@@ -2048,29 +2306,46 @@ def listar_usuarios():
     try:
         conn = get_connection()
         cur = conn.cursor()
-        try:
-            cur.execute("SELECT id, name, username, level, created_at, profissional_id FROM usuarios ORDER BY created_at DESC NULLS LAST LIMIT 100")
-            rows = cur.fetchall()
-            has_profissional_id = True
-        except Exception:
-            cur.execute("SELECT id, name, username, level, created_at FROM usuarios ORDER BY created_at DESC NULLS LAST LIMIT 100")
-            rows = cur.fetchall()
-            has_profissional_id = False
+        user_cols = ensure_usuarios_audit_columns(cur)
+        conn.commit()
+
+        select_fields = ['id', 'name', 'username', 'level', 'created_at']
+        if 'profissional_id' in user_cols:
+            select_fields.append('profissional_id')
+        if 'ultimo_login_em' in user_cols:
+            select_fields.append('ultimo_login_em')
+        if 'ultimo_login_ip' in user_cols:
+            select_fields.append('ultimo_login_ip')
+        if 'is_active' in user_cols:
+            select_fields.append('is_active')
+
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios ORDER BY created_at DESC NULLS LAST LIMIT 100"
+        )
+        rows = cur.fetchall()
+        column_names = [desc[0] for desc in cur.description]
         cur.close()
         conn.close()
 
         users_list = []
         for r in rows:
+            item = dict(zip(column_names, r))
+            last_login = item.get('ultimo_login_em')
             user_obj = {
-                'id': r[0],
-                'name': r[1],
-                'username': r[2],
-                'level': normalize_level(r[3]),
-                'created_at': r[4].isoformat() if r[4] else None
+                'id': item.get('id'),
+                'name': item.get('name'),
+                'username': item.get('username'),
+                'level': normalize_level(item.get('level')),
+                'created_at': item.get('created_at').isoformat() if item.get('created_at') else None,
+                'last_login': last_login.isoformat() if hasattr(last_login, 'isoformat') else last_login,
+                'ultimo_login_em': last_login.isoformat() if hasattr(last_login, 'isoformat') else last_login,
+                'ultimo_login_ip': item.get('ultimo_login_ip'),
+                'is_active': item.get('is_active', True),
+                'isActive': item.get('is_active', True)
             }
-            if has_profissional_id:
-                user_obj['professionalId'] = r[5]
-                user_obj['profissional_id'] = r[5]
+            if 'profissional_id' in item:
+                user_obj['professionalId'] = item.get('profissional_id')
+                user_obj['profissional_id'] = item.get('profissional_id')
             users_list.append(user_obj)
 
         return jsonify({"success": True, "users": users_list})
@@ -2088,7 +2363,62 @@ def authenticate():
 
     user, auth_error = authenticate_credentials(username, password)
     if auth_error:
+        if username:
+            record_audit_log_standalone(
+                'login_falha',
+                'usuario',
+                entidade_id=username,
+                entidade_rotulo=username,
+                actor={'name': username, 'username': username},
+                detalhes={'motivo': 'credenciais_invalidas_ou_usuario_inativo'}
+            )
         return auth_error
+
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        ensure_usuarios_audit_columns(cur)
+        context = get_request_audit_context()
+        cur.execute("""
+            UPDATE usuarios
+            SET ultimo_login_em = NOW(),
+                ultimo_login_ip = %s,
+                ultimo_login_user_agent = %s
+            WHERE lower(username) = %s
+            RETURNING ultimo_login_em, ultimo_login_ip
+        """, (context.get('ip'), context.get('user_agent'), username.lower()))
+        login_row = cur.fetchone()
+        if login_row:
+            user['lastLogin'] = login_row[0].isoformat() if hasattr(login_row[0], 'isoformat') else login_row[0]
+            user['ultimo_login_em'] = user['lastLogin']
+            user['ultimo_login_ip'] = login_row[1]
+        insert_audit_log(
+            cur,
+            'login_sucesso',
+            'usuario',
+            entidade_id=user.get('username'),
+            entidade_rotulo=user.get('name') or user.get('username'),
+            actor=user,
+            detalhes={'origem': 'login'}
+        )
+        conn.commit()
+    except Exception as e:
+        print('Erro ao atualizar ultimo login/auditoria:', e)
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
     session['current_user'] = {
         'username': user['username'],
@@ -2109,6 +2439,19 @@ def authenticated_user_info():
 
 @app.route('/api/logout', methods=['POST'])
 def logout_user():
+    try:
+        current_user = session.get('current_user')
+        if current_user and current_user.get('username'):
+            record_audit_log_standalone(
+                'logout',
+                'usuario',
+                entidade_id=current_user.get('username'),
+                entidade_rotulo=current_user.get('name') or current_user.get('username'),
+                actor=current_user,
+                detalhes={'origem': 'logout'}
+            )
+    except Exception:
+        pass
     session.pop('current_user', None)
     return jsonify({'success': True})
 
@@ -2119,6 +2462,127 @@ def clear_cache():
     if auth_check:
         return auth_check
     return jsonify({'success': True, 'cleared': clear_runtime_caches()})
+
+
+def serialize_audit_log_row(row, column_names):
+    item = dict(zip(column_names, row))
+    for key in ('dados_antes', 'dados_depois', 'detalhes'):
+        item[key] = normalize_audit_payload(item.get(key))
+    if item.get('criado_em') is not None and hasattr(item['criado_em'], 'isoformat'):
+        item['criado_em'] = item['criado_em'].isoformat()
+    return item
+
+
+def query_audit_logs(force_deleted=False):
+    auth_check = require_admin()
+    if auth_check:
+        return auth_check
+
+    try:
+        limit = int(request.args.get('limit') or 100)
+    except Exception:
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    where = []
+    params = []
+
+    if force_deleted or str(request.args.get('deleted') or request.args.get('excluidos') or '').lower() in ('1', 'true', 'yes', 'sim', 's'):
+        where.append("acao ILIKE %s")
+        params.append('%exclu%')
+
+    action = (request.args.get('acao') or request.args.get('action') or '').strip()
+    if action:
+        if action == 'editado':
+            where.append("(acao ILIKE %s OR acao ILIKE %s)")
+            params.extend(['%editado%', '%atualizado%'])
+        elif action in ('criado', 'atualizado', 'status_alterado'):
+            where.append("acao ILIKE %s")
+            params.append(f"%{action}%")
+        else:
+            where.append("lower(acao) = lower(%s)")
+            params.append(action)
+
+    entity_type = (request.args.get('entidade_tipo') or request.args.get('entity_type') or request.args.get('modulo') or '').strip()
+    if entity_type:
+        where.append("lower(entidade_tipo) = lower(%s)")
+        params.append(entity_type)
+
+    entity_id = (request.args.get('entidade_id') or request.args.get('entity_id') or '').strip()
+    if entity_id:
+        where.append("entidade_id = %s")
+        params.append(entity_id)
+
+    user_filter = (request.args.get('usuario') or request.args.get('user') or '').strip()
+    if user_filter:
+        where.append("(lower(COALESCE(usuario_username, '')) = lower(%s) OR usuario_nome ILIKE %s)")
+        params.extend([user_filter, f"%{user_filter}%"])
+
+    start_date = normalize_date_for_db(request.args.get('inicio') or request.args.get('start') or request.args.get('from'))
+    if start_date:
+        where.append("criado_em >= %s")
+        params.append(start_date)
+
+    end_date = normalize_date_for_db(request.args.get('fim') or request.args.get('end') or request.args.get('to'))
+    if end_date:
+        where.append("criado_em < (%s::date + INTERVAL '1 day')")
+        params.append(end_date)
+
+    search = (request.args.get('q') or request.args.get('busca') or '').strip()
+    if search:
+        pattern = f"%{search}%"
+        where.append("""(
+            entidade_rotulo ILIKE %s OR entidade_id ILIKE %s OR usuario_nome ILIKE %s OR
+            usuario_username ILIKE %s OR acao ILIKE %s OR entidade_tipo ILIKE %s OR
+            COALESCE(detalhes::text, '') ILIKE %s OR COALESCE(dados_antes::text, '') ILIKE %s OR
+            COALESCE(dados_depois::text, '') ILIKE %s
+        )""")
+        params.extend([pattern] * 9)
+
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ''
+
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        ensure_audit_logs_table(cur)
+        conn.commit()
+        cur.execute(f"""
+            SELECT id, acao, entidade_tipo, entidade_id, entidade_rotulo,
+                   usuario_nome, usuario_username, dados_antes, dados_depois,
+                   detalhes, ip, user_agent, criado_em
+            FROM audit_logs
+            {where_sql}
+            ORDER BY criado_em DESC, id DESC
+            LIMIT %s
+        """, tuple(params + [limit]))
+        rows = cur.fetchall()
+        column_names = [desc[0] for desc in cur.description]
+        logs = [serialize_audit_log_row(row, column_names) for row in rows]
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'logs': logs, 'limit': limit})
+    except Exception as e:
+        print('Erro ao listar auditoria geral:', e)
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except:
+            pass
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auditoria', methods=['GET'])
+def listar_auditoria_geral():
+    return query_audit_logs(force_deleted=False)
+
+
+@app.route('/api/auditoria/excluidos', methods=['GET'])
+def listar_auditoria_excluidos():
+    return query_audit_logs(force_deleted=True)
 
 
 @app.route("/api/usuarios/<username>", methods=["PUT"])
@@ -2145,6 +2609,20 @@ def atualizar_usuario(username):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        user_cols = ensure_usuarios_audit_columns(cur)
+        select_fields = ['username', 'name', 'level', 'is_active']
+        if 'profissional_id' in user_cols:
+            select_fields.append('profissional_id')
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
+            (str(username or '').lower(),)
+        )
+        before_row = cur.fetchone()
+        if not before_row:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Usuario nao encontrado'}), 404
+        before_data = dict(zip(select_fields, before_row))
 
         # Build update dynamically
         fields = []
@@ -2167,11 +2645,38 @@ def atualizar_usuario(username):
             values.append(is_active)
 
         if len(fields) == 0:
+            cur.close()
+            conn.close()
             return jsonify({'success': False, 'error': 'Nada para atualizar'})
 
-        values.append(username)  # WHERE username = username
-        sql = f"UPDATE usuarios SET {', '.join(fields)} WHERE username = %s"
+        values.append(str(username or '').lower())
+        sql = f"UPDATE usuarios SET {', '.join(fields)} WHERE lower(username) = %s"
         cur.execute(sql, tuple(values))
+
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
+            (str(username or '').lower(),)
+        )
+        after_row = cur.fetchone()
+        after_data = dict(zip(select_fields, after_row)) if after_row else {}
+        changes = build_audit_changes(before_data, after_data)
+        if password:
+            changes['senha'] = {'antes': '[protegida]', 'depois': 'alterada'}
+        if changes:
+            action = 'usuario_atualizado'
+            if 'is_active' in changes and len(changes) == 1:
+                action = 'usuario_reativado' if after_data.get('is_active') else 'usuario_inativado'
+            insert_audit_log(
+                cur,
+                action,
+                'usuario',
+                entidade_id=after_data.get('username') or username,
+                entidade_rotulo=after_data.get('name') or after_data.get('username') or username,
+                actor=authenticated_user,
+                dados_antes=before_data,
+                dados_depois=after_data,
+                detalhes={'alteracoes': changes}
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -2198,9 +2703,32 @@ def deletar_usuario(username):
         return admin_check
 
     try:
+        authenticated_user, _auth_error = get_authenticated_user()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM usuarios WHERE username = %s", (username,))
+        user_cols = ensure_usuarios_audit_columns(cur)
+        select_fields = ['username', 'name', 'level', 'is_active', 'created_at']
+        if 'profissional_id' in user_cols:
+            select_fields.append('profissional_id')
+        if 'ultimo_login_em' in user_cols:
+            select_fields.append('ultimo_login_em')
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
+            (str(username or '').lower(),)
+        )
+        before_row = cur.fetchone()
+        before_data = dict(zip(select_fields, before_row)) if before_row else None
+        cur.execute("DELETE FROM usuarios WHERE lower(username) = %s", (str(username or '').lower(),))
+        if before_data:
+            insert_audit_log(
+                cur,
+                'usuario_excluido',
+                'usuario',
+                entidade_id=before_data.get('username') or username,
+                entidade_rotulo=before_data.get('name') or before_data.get('username') or username,
+                actor=authenticated_user,
+                dados_antes=before_data
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -2510,6 +3038,27 @@ def criar_profissional():
         """, tuple(values))
 
         row = cur.fetchone()
+        authenticated_user, _auth_error = get_authenticated_user()
+        insert_audit_log(
+            cur,
+            'profissional_criado',
+            'profissional',
+            entidade_id=row[0],
+            entidade_rotulo=nome,
+            actor=authenticated_user,
+            dados_depois={
+                'id': row[0],
+                'nome': nome,
+                'especialidade': especialidade,
+                'telefone': telefone,
+                'data_nascimento': serialize_audit_value(data_nascimento),
+                'email': email,
+                'numero_conselho': numero_conselho,
+                'preferencia': preferencia,
+                'contato_emergencia': contato_emergencia,
+                'ativo': row[1]
+            }
+        )
         conn.commit()
         cur.close()
         conn.close()
@@ -2670,6 +3219,26 @@ def criar_paciente():
         """, tuple(values))
 
         row = cur.fetchone()
+        authenticated_user, _auth_error = get_authenticated_user()
+        insert_audit_log(
+            cur,
+            'paciente_criado',
+            'paciente',
+            entidade_id=row[0],
+            entidade_rotulo=nome,
+            actor=authenticated_user,
+            dados_depois={
+                'id': row[0],
+                'nome': nome,
+                'telefone': telefone,
+                'data_nascimento': serialize_audit_value(data_nascimento),
+                'endereco': endereco,
+                'nome_mae': nome_mae,
+                'nome_pai': nome_pai,
+                'convenio': convenio,
+                'ativo': True
+            }
+        )
         conn.commit()
         cur.close()
         conn.close()
@@ -2827,16 +3396,62 @@ def atualizar_paciente(paciente_id):
             fields.append('atualizado_em = NOW()')
         return_phone_field = phone_column_name or 'NULL AS telefone'
         return_ativo_field = 'ativo' if 'ativo' in patient_cols else 'TRUE AS ativo'
+        audit_select_fields = [
+            'id',
+            'nome',
+            'data_nascimento',
+            'endereco',
+            return_phone_field,
+            'nome_mae',
+            'nome_pai',
+            'convenio',
+            return_ativo_field
+        ]
+        cur.execute(f"SELECT {', '.join(audit_select_fields)} FROM pacientes WHERE id = %s", (paciente_id,))
+        before_row = cur.fetchone()
+        before_columns = [desc[0] for desc in cur.description]
+        before_data = dict(zip(before_columns, before_row)) if before_row else None
         query = f"UPDATE pacientes SET {', '.join(fields)} WHERE id = %s RETURNING id, nome, data_nascimento, endereco, {return_phone_field}, nome_mae, nome_pai, convenio, {return_ativo_field}, criado_em"
         values.append(paciente_id)
         cur.execute(query, tuple(values))
         row = cur.fetchone()
+        if not row:
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Paciente não encontrado'}), 404
+
+        after_data = {
+            'id': row[0],
+            'nome': row[1],
+            'data_nascimento': serialize_audit_value(row[2]),
+            'endereco': row[3],
+            'telefone': row[4],
+            'nome_mae': row[5],
+            'nome_pai': row[6],
+            'convenio': row[7],
+            'ativo': row[8]
+        }
+        if before_data:
+            before_data['data_nascimento'] = serialize_audit_value(before_data.get('data_nascimento'))
+            changes = build_audit_changes(before_data, after_data, exclude_fields={'id'})
+            if changes:
+                authenticated_user, _auth_error = get_authenticated_user()
+                action = 'paciente_inativado' if set(changes.keys()) == {'ativo'} and after_data.get('ativo') is False else 'paciente_atualizado'
+                insert_audit_log(
+                    cur,
+                    action,
+                    'paciente',
+                    entidade_id=paciente_id,
+                    entidade_rotulo=after_data.get('nome') or (before_data or {}).get('nome'),
+                    actor=authenticated_user,
+                    dados_antes=before_data,
+                    dados_depois=after_data,
+                    detalhes={'alteracoes': changes}
+                )
         conn.commit()
         cur.close()
         conn.close()
-
-        if not row:
-            return jsonify({'success': False, 'error': 'Paciente não encontrado'}), 404
 
         updated = {
             'id': row[0],
@@ -2873,6 +3488,15 @@ def excluir_paciente(paciente_id):
         conn = get_connection()
         cur = conn.cursor()
         patient_cols = ensure_table_updated_timestamp(cur, 'pacientes', get_table_columns_cached(cur, 'pacientes'))
+        phone_field = 'telefone' if 'telefone' in patient_cols else ('phone AS telefone' if 'phone' in patient_cols else 'NULL AS telefone')
+        ativo_field = 'ativo' if 'ativo' in patient_cols else 'TRUE AS ativo'
+        cur.execute(
+            f"SELECT id, nome, data_nascimento, endereco, {phone_field}, nome_mae, nome_pai, convenio, {ativo_field} FROM pacientes WHERE id = %s",
+            (paciente_id,)
+        )
+        before_row = cur.fetchone()
+        before_columns = [desc[0] for desc in cur.description]
+        before_data = dict(zip(before_columns, before_row)) if before_row else None
         if 'ativo' in patient_cols:
             if 'atualizado_em' in patient_cols:
                 cur.execute('UPDATE pacientes SET ativo = FALSE, atualizado_em = NOW() WHERE id = %s RETURNING id', (paciente_id,))
@@ -2882,12 +3506,30 @@ def excluir_paciente(paciente_id):
             cur.execute('DELETE FROM pacientes WHERE id = %s RETURNING id', (paciente_id,))
 
         row = cur.fetchone()
+        if not row:
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Paciente não encontrado'}), 404
+
+        if before_data:
+            before_data['data_nascimento'] = serialize_audit_value(before_data.get('data_nascimento'))
+            authenticated_user, _auth_error = get_authenticated_user()
+            insert_audit_log(
+                cur,
+                'paciente_excluido',
+                'paciente',
+                entidade_id=row[0],
+                entidade_rotulo=before_data.get('nome'),
+                actor=authenticated_user,
+                dados_antes=before_data,
+                dados_depois={'id': row[0], 'ativo': False} if 'ativo' in patient_cols else None,
+                detalhes={'modo': 'inativado' if 'ativo' in patient_cols else 'excluido'}
+            )
+
         conn.commit()
         cur.close()
         conn.close()
-
-        if not row:
-            return jsonify({'success': False, 'error': 'Paciente não encontrado'}), 404
 
         return jsonify({'success': True, 'deleted_id': row[0]})
     except Exception as e:
@@ -3350,6 +3992,9 @@ def create_indexes():
         ensure_remarque_table_cached(cur)
         ensure_lista_espera_table(cur)
         ensure_agendamento_link_schema(cur)
+        ensure_agendamento_auditoria_table(cur)
+        ensure_audit_logs_table(cur)
+        ensure_usuarios_audit_columns(cur)
         try:
             cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
             conn.commit()
@@ -3814,6 +4459,31 @@ def atualizar_profissional(prof_id):
         cur = conn.cursor()
         professional_cols = ensure_table_updated_timestamp(cur, 'profissionais', get_table_columns_cached(cur, 'profissionais'))
         ensure_professional_extra_columns(cur, professional_cols)
+        audit_select_fields = ['id', 'nome', 'especialidade', 'ativo']
+        if 'telefone' in professional_cols:
+            audit_select_fields.append('telefone')
+        elif 'phone' in professional_cols:
+            audit_select_fields.append('phone AS telefone')
+        if 'data_nascimento' in professional_cols:
+            audit_select_fields.append('data_nascimento')
+        elif 'birthdate' in professional_cols:
+            audit_select_fields.append('birthdate AS data_nascimento')
+        if 'email' in professional_cols:
+            audit_select_fields.append('email')
+        if 'numero_conselho' in professional_cols:
+            audit_select_fields.append('numero_conselho')
+        elif 'conselho' in professional_cols:
+            audit_select_fields.append('conselho AS numero_conselho')
+        elif 'council_number' in professional_cols:
+            audit_select_fields.append('council_number AS numero_conselho')
+        if 'preferencia' in professional_cols:
+            audit_select_fields.append('preferencia')
+        if 'contato_emergencia' in professional_cols:
+            audit_select_fields.append('contato_emergencia')
+        cur.execute(f"SELECT {', '.join(audit_select_fields)} FROM profissionais WHERE id = %s", (prof_id,))
+        before_row = cur.fetchone()
+        before_columns = [desc[0] for desc in cur.description]
+        before_data = dict(zip(before_columns, before_row)) if before_row else None
 
         fields = []
         values = []
@@ -3861,6 +4531,8 @@ def atualizar_profissional(prof_id):
             values.append(ativo)
 
         if len(fields) == 0:
+            cur.close()
+            conn.close()
             return jsonify({'success': False, 'error': 'Nada para atualizar'}), 400
 
         if 'atualizado_em' in professional_cols:
@@ -3868,7 +4540,6 @@ def atualizar_profissional(prof_id):
         values.append(prof_id)
         sql = f"UPDATE profissionais SET {', '.join(fields)} WHERE id = %s"
         cur.execute(sql, tuple(values))
-        conn.commit()
 
         # Return the updated record for frontend synchronization
         select_fields = ['id', 'nome', 'especialidade', 'ativo']
@@ -3895,12 +4566,37 @@ def atualizar_profissional(prof_id):
 
         cur.execute(f"SELECT {', '.join(select_fields)} FROM profissionais WHERE id = %s", (prof_id,))
         updated_row = cur.fetchone()
+        if not updated_row:
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Profissional nao encontrado'}), 404
         column_names = [desc[0] for desc in cur.description]
         updated_prof = dict(zip(column_names, updated_row))
         if 'birthdate' in updated_prof and 'data_nascimento' not in updated_prof:
             updated_prof['data_nascimento'] = updated_prof.pop('birthdate')
         if 'data_nascimento' in updated_prof and hasattr(updated_prof['data_nascimento'], 'isoformat'):
             updated_prof['data_nascimento'] = updated_prof['data_nascimento'].isoformat()
+        after_data = dict(updated_prof)
+        if before_data:
+            if 'data_nascimento' in before_data:
+                before_data['data_nascimento'] = serialize_audit_value(before_data.get('data_nascimento'))
+            changes = build_audit_changes(before_data, after_data, exclude_fields={'id'})
+            if changes:
+                authenticated_user, _auth_error = get_authenticated_user()
+                insert_audit_log(
+                    cur,
+                    'profissional_atualizado',
+                    'profissional',
+                    entidade_id=prof_id,
+                    entidade_rotulo=after_data.get('nome') or before_data.get('nome'),
+                    actor=authenticated_user,
+                    dados_antes=before_data,
+                    dados_depois=after_data,
+                    detalhes={'alteracoes': changes}
+                )
+
+        conn.commit()
 
         cur.close()
         conn.close()
@@ -3927,13 +4623,43 @@ def deletar_profissional(prof_id):
         return admin_check
 
     try:
+        authenticated_user, _auth_error = get_authenticated_user()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('DELETE FROM profissionais WHERE id = %s', (prof_id,))
+        professional_cols = get_table_columns_cached(cur, 'profissionais')
+        select_fields = ['id', 'nome', 'especialidade', 'ativo']
+        if 'telefone' in professional_cols:
+            select_fields.append('telefone')
+        elif 'phone' in professional_cols:
+            select_fields.append('phone AS telefone')
+        if 'data_nascimento' in professional_cols:
+            select_fields.append('data_nascimento')
+        elif 'birthdate' in professional_cols:
+            select_fields.append('birthdate AS data_nascimento')
+        if 'email' in professional_cols:
+            select_fields.append('email')
+        cur.execute(f"SELECT {', '.join(select_fields)} FROM profissionais WHERE id = %s", (prof_id,))
+        before_row = cur.fetchone()
+        before_columns = [desc[0] for desc in cur.description]
+        before_data = dict(zip(before_columns, before_row)) if before_row else None
+        cur.execute('DELETE FROM profissionais WHERE id = %s RETURNING id', (prof_id,))
+        deleted_row = cur.fetchone()
+        if before_data:
+            if 'data_nascimento' in before_data:
+                before_data['data_nascimento'] = serialize_audit_value(before_data.get('data_nascimento'))
+            insert_audit_log(
+                cur,
+                'profissional_excluido',
+                'profissional',
+                entidade_id=prof_id,
+                entidade_rotulo=before_data.get('nome'),
+                actor=authenticated_user,
+                dados_antes=before_data
+            )
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'deleted_id': deleted_row[0] if deleted_row else None})
     except Exception as e:
         print('Erro ao deletar profissional:', e)
         try:
@@ -4881,12 +5607,27 @@ def listar_agendamento_auditoria(agendamento_id):
             conn.close()
             return jsonify({'success': False, 'error': 'Sem permissao para ver o historico deste agendamento'}), 403
 
-        cur.execute("""
+        audit_limit = None
+        try:
+            audit_limit = int(request.args.get('limit') or 0)
+        except Exception:
+            audit_limit = None
+        if audit_limit:
+            audit_limit = max(1, min(audit_limit, 50))
+        audit_desc = str(request.args.get('order') or '').lower() in ('desc', 'recent', 'recentes')
+        audit_order = 'DESC' if audit_desc else 'ASC'
+        audit_limit_sql = ' LIMIT %s' if audit_limit else ''
+        audit_params = [agendamento_id]
+        if audit_limit:
+            audit_params.append(audit_limit)
+
+        cur.execute(f"""
             SELECT id, acao, status_anterior, status_novo, usuario_nome, usuario_username, detalhes, criado_em
             FROM agendamento_auditoria
             WHERE agendamento_id = %s
-            ORDER BY criado_em ASC, id ASC
-        """, (agendamento_id,))
+            ORDER BY criado_em {audit_order}, id {audit_order}
+            {audit_limit_sql}
+        """, tuple(audit_params))
         auditoria = []
         for row in cur.fetchall():
             detalhes = row[6]
@@ -5519,17 +6260,77 @@ def deletar_agendamentos_em_lote():
         ensure_agendamento_lock_columns(cur, appointment_cols)
 
         id_placeholders = ', '.join(['%s'] * len(appointment_ids))
+        select_fields = [
+            'id',
+            'profissional',
+            'paciente',
+            'tipo_atendimento',
+            'data',
+            'hora_inicio',
+            'hora_fim',
+            'status' if 'status' in appointment_cols else 'NULL AS status',
+            'cancelado_por_username'
+        ]
+        field_names = [
+            'id',
+            'profissional',
+            'paciente',
+            'tipo_atendimento',
+            'data',
+            'hora_inicio',
+            'hora_fim',
+            'status',
+            'cancelado_por_username'
+        ]
+        if 'profissional_id' in appointment_cols:
+            select_fields.insert(2, 'profissional_id')
+            field_names.insert(2, 'profissional_id')
+        if 'paciente_id' in appointment_cols:
+            select_fields.insert(4 if 'profissional_id' in appointment_cols else 3, 'paciente_id')
+            field_names.insert(4 if 'profissional_id' in appointment_cols else 3, 'paciente_id')
+        if 'sala_id' in appointment_cols:
+            select_fields.insert(-2, 'sala_id')
+            field_names.insert(-2, 'sala_id')
+        if 'recorrencia_grupo_id' in appointment_cols:
+            select_fields.append('recorrencia_grupo_id')
+            field_names.append('recorrencia_grupo_id')
+
         cur.execute(
-            f"SELECT id, status, cancelado_por_username FROM agendamentos WHERE id IN ({id_placeholders})",
+            f"SELECT {', '.join(select_fields)} FROM agendamentos WHERE id IN ({id_placeholders})",
             tuple(appointment_ids)
         )
         current_rows = cur.fetchall()
-        current_by_id = {row[0]: {'status': row[1], 'cancelado_por_username': row[2]} for row in current_rows}
+        current_by_id = {row[0]: dict(zip(field_names, row)) for row in current_rows}
         missing_ids = [apt_id for apt_id in appointment_ids if apt_id not in current_by_id]
         if missing_ids:
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': f'Agendamentos nao encontrados: {missing_ids}'}), 404
+
+        audit_user = build_audit_user(data, authenticated_user)
+        for apt_id in appointment_ids:
+            item = current_by_id.get(apt_id, {})
+            insert_agendamento_audit(
+                cur,
+                apt_id,
+                'excluido_lote',
+                audit_user,
+                status_anterior=item.get('status'),
+                status_novo=None,
+                detalhes={
+                    'profissional': item.get('profissional'),
+                    'profissional_id': item.get('profissional_id'),
+                    'paciente': item.get('paciente'),
+                    'paciente_id': item.get('paciente_id'),
+                    'tipo_atendimento': item.get('tipo_atendimento'),
+                    'data': serialize_audit_value(item.get('data')),
+                    'hora_inicio': serialize_audit_value(item.get('hora_inicio')),
+                    'hora_fim': serialize_audit_value(item.get('hora_fim')),
+                    'sala_id': item.get('sala_id'),
+                    'recorrencia_grupo_id': item.get('recorrencia_grupo_id'),
+                    'exclusao_em_lote': True
+                }
+            )
 
         cur.execute(
             f"DELETE FROM agendamentos WHERE id IN ({id_placeholders})",
