@@ -1126,6 +1126,27 @@ def get_room_name_by_id(cur, sala_id):
     return row[0] if row else None
 
 
+def normalize_recurrence_scope(value, default='single'):
+    raw = str(value or '').strip().lower()
+    aliases = {
+        'single': 'single',
+        'only': 'single',
+        'este': 'single',
+        'so_este': 'single',
+        'somente_este': 'single',
+        'weekday': 'weekday',
+        'same_weekday': 'weekday',
+        'dia_semana': 'weekday',
+        'mesmo_dia_semana': 'weekday',
+        'all': 'all',
+        'series': 'all',
+        'serie': 'all',
+        'todos': 'all',
+        'todas': 'all'
+    }
+    return aliases.get(raw, default)
+
+
 TABLE_COLUMNS_CACHE = {}
 TABLE_COLUMNS_CACHE_LOCK = threading.Lock()
 AGENDAMENTOS_LIST_CACHE = {}
@@ -6052,6 +6073,12 @@ def atualizar_agendamento(agendamento_id):
     hora_inicio = data.get('hora_inicio')
     hora_fim = data.get('hora_fim')
     quantidade_sessoes = data.get('quantidade_sessoes')
+    recurrence_scope = normalize_recurrence_scope(
+        data.get('recurrence_scope') or
+        data.get('recurrenceScope') or
+        data.get('apply_recurrence_scope') or
+        data.get('applyRecurrenceScope')
+    )
     sala_id_provided = any(key in data for key in ('sala_id', 'salaId', 'roomId', 'sala'))
     sala_id = normalize_room_id(data.get('sala_id') or data.get('salaId') or data.get('roomId') or data.get('sala'))
     status_provided = 'status' in data
@@ -6086,6 +6113,7 @@ def atualizar_agendamento(agendamento_id):
 
         # Verificar quais colunas existem na tabela
         appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
+        ensure_agendamento_recurrence_columns(cur, appointment_cols)
         ensure_agendamento_lock_columns(cur, appointment_cols)
         ensure_agendamento_auditoria_table(cur)
 
@@ -6101,6 +6129,8 @@ def atualizar_agendamento(agendamento_id):
             audit_select_fields.insert(6, 'quantidade_sessoes')
         if 'sala_id' in appointment_cols:
             audit_select_fields.insert(6, 'sala_id')
+        if 'recorrencia_grupo_id' in appointment_cols:
+            audit_select_fields.append('recorrencia_grupo_id')
         cur.execute(
             f"SELECT {', '.join(audit_select_fields)} FROM agendamentos WHERE id = %s",
             (agendamento_id,)
@@ -6157,71 +6187,116 @@ def atualizar_agendamento(agendamento_id):
                 conn.close()
                 return jsonify({'success': False, 'error': 'Somente o usuario que cancelou pode liberar este agendamento'}), 403
 
+        effective_recurrence_scope = recurrence_scope if (
+            changes_schedule_data and novo_status is None and not release_lock
+        ) else 'single'
+        recurrence_group_id = current_data.get('recorrencia_grupo_id')
+        target_rows = [{'id': agendamento_id, **current_data}]
+        if effective_recurrence_scope != 'single':
+            if recurrence_group_id:
+                target_select_fields = ['id'] + audit_select_fields
+                target_params = [recurrence_group_id]
+                target_where = 'recorrencia_grupo_id = %s'
+                if effective_recurrence_scope == 'weekday':
+                    target_where += ' AND EXTRACT(DOW FROM data::date) = EXTRACT(DOW FROM %s::date)'
+                    target_params.append(current_data.get('data'))
+                cur.execute(
+                    f"""
+                    SELECT {', '.join(target_select_fields)}
+                    FROM agendamentos
+                    WHERE {target_where}
+                    ORDER BY data ASC, hora_inicio ASC, id ASC
+                    """,
+                    tuple(target_params)
+                )
+                target_rows = [dict(zip(target_select_fields, row)) for row in cur.fetchall()]
+            if not recurrence_group_id or not target_rows:
+                effective_recurrence_scope = 'single'
+                target_rows = [{'id': agendamento_id, **current_data}]
+
+        target_ids = sorted({int(item['id']) for item in target_rows})
+        apply_data_field = data_field is not None and effective_recurrence_scope == 'single'
+        skipped_fields = []
+        if data_field is not None and effective_recurrence_scope != 'single':
+            skipped_fields.append('data')
+
         if changes_schedule_data:
-            effective_paciente_id = resolved_paciente_id if paciente_provided else current_data.get('paciente_id')
-            effective_sala_id = sala_id if sala_id_provided else current_data.get('sala_id')
-            effective_data = data_field if data_field is not None else current_data.get('data')
-            effective_hora_inicio = hora_inicio if hora_inicio is not None else current_data.get('hora_inicio')
-            effective_hora_fim = hora_fim if hora_fim is not None else (current_data.get('hora_fim') or effective_hora_inicio)
-            conflict = find_patient_room_conflict(
-                cur,
-                effective_paciente_id,
-                effective_sala_id,
-                effective_data,
-                effective_hora_inicio,
-                effective_hora_fim,
-                exclude_agendamento_id=agendamento_id,
-                appointment_cols=appointment_cols
-            )
-            if conflict:
-                cur.close()
-                conn.close()
-                return jsonify({
-                    'success': False,
-                    'error': build_patient_room_conflict_error(conflict),
-                    'conflict': {
-                        'id': conflict.get('id'),
-                        'paciente': conflict.get('paciente'),
-                        'sala_id': conflict.get('sala_id'),
-                        'sala_nome': conflict.get('sala_nome'),
-                        'data': serialize_audit_value(conflict.get('data')),
-                        'hora_inicio': format_conflict_time(conflict.get('hora_inicio')),
-                        'hora_fim': format_conflict_time(conflict.get('hora_fim'))
-                    }
-                }), 409
+            for target_row in target_rows:
+                effective_paciente_id = resolved_paciente_id if paciente_provided else target_row.get('paciente_id')
+                effective_sala_id = sala_id if sala_id_provided else target_row.get('sala_id')
+                effective_data = data_field if apply_data_field else target_row.get('data')
+                effective_hora_inicio = hora_inicio if hora_inicio is not None else target_row.get('hora_inicio')
+                effective_hora_fim = hora_fim if hora_fim is not None else (target_row.get('hora_fim') or effective_hora_inicio)
+                conflict = find_patient_room_conflict(
+                    cur,
+                    effective_paciente_id,
+                    effective_sala_id,
+                    effective_data,
+                    effective_hora_inicio,
+                    effective_hora_fim,
+                    exclude_agendamento_id=target_row.get('id'),
+                    appointment_cols=appointment_cols
+                )
+                if conflict:
+                    cur.close()
+                    conn.close()
+                    return jsonify({
+                        'success': False,
+                        'error': build_patient_room_conflict_error(conflict),
+                        'conflict': {
+                            'id': conflict.get('id'),
+                            'paciente': conflict.get('paciente'),
+                            'sala_id': conflict.get('sala_id'),
+                            'sala_nome': conflict.get('sala_nome'),
+                            'data': serialize_audit_value(conflict.get('data')),
+                            'hora_inicio': format_conflict_time(conflict.get('hora_inicio')),
+                            'hora_fim': format_conflict_time(conflict.get('hora_fim'))
+                        }
+                    }), 409
 
         fields = []
         values = []
+        applied_field_pairs = {}
         if profissional_provided:
             fields.append('profissional = %s')
             values.append(profissional)
+            applied_field_pairs['profissional'] = profissional
             if 'profissional_id' in appointment_cols:
                 fields.append('profissional_id = %s')
                 values.append(resolved_profissional_id)
+                applied_field_pairs['profissional_id'] = resolved_profissional_id
         if paciente_provided:
             fields.append('paciente = %s')
             values.append(paciente)
+            applied_field_pairs['paciente'] = paciente
             if 'paciente_id' in appointment_cols:
                 fields.append('paciente_id = %s')
                 values.append(resolved_paciente_id)
+                applied_field_pairs['paciente_id'] = resolved_paciente_id
         if tipo is not None:
             fields.append('tipo_atendimento = %s')
             values.append(tipo)
-        if data_field is not None:
+            applied_field_pairs['tipo_atendimento'] = tipo
+        if apply_data_field:
             fields.append('data = %s')
             values.append(data_field)
+            applied_field_pairs['data'] = data_field
         if hora_inicio is not None:
             fields.append('hora_inicio = %s')
             values.append(hora_inicio)
+            applied_field_pairs['hora_inicio'] = hora_inicio
         if hora_fim is not None:
             fields.append('hora_fim = %s')
             values.append(hora_fim)
+            applied_field_pairs['hora_fim'] = hora_fim
         if quantidade_sessoes is not None:
             fields.append('quantidade_sessoes = %s')
             values.append(quantidade_sessoes)
+            applied_field_pairs['quantidade_sessoes'] = quantidade_sessoes
         if sala_id_provided:
             fields.append('sala_id = %s')
             values.append(sala_id)
+            applied_field_pairs['sala_id'] = sala_id
 
         if release_lock:
             fields.append('cancelado_por_username = %s')
@@ -6276,72 +6351,76 @@ def atualizar_agendamento(agendamento_id):
         if len(fields) == 0:
             return jsonify({'success': False, 'error': 'Nada para atualizar'}), 400
 
-        values.append(agendamento_id)
-        sql = f"UPDATE agendamentos SET {', '.join(fields)} WHERE id = %s"
-        cur.execute(sql, tuple(values))
+        id_placeholders = ', '.join(['%s'] * len(target_ids))
+        sql = f"UPDATE agendamentos SET {', '.join(fields)} WHERE id IN ({id_placeholders})"
+        cur.execute(sql, tuple(values + target_ids))
+        updated_count = cur.rowcount
 
-        audit_changes = {}
-        field_pairs = {
-            'profissional': profissional,
-            'profissional_id': resolved_profissional_id,
-            'paciente': paciente,
-            'paciente_id': resolved_paciente_id,
-            'tipo_atendimento': tipo,
-            'data': data_field,
-            'hora_inicio': hora_inicio,
-            'hora_fim': hora_fim,
-            'quantidade_sessoes': quantidade_sessoes
-        }
-        if sala_id_provided:
-            field_pairs['sala_id'] = sala_id
-        for field_name, new_value in field_pairs.items():
-            if (new_value is None and field_name != 'sala_id') or field_name not in current_data:
-                continue
-            old_value = serialize_audit_value(current_data.get(field_name))
-            new_serialized = serialize_audit_value(new_value)
-            if str(old_value or '') != str(new_serialized or ''):
-                audit_changes[field_name] = {
-                    'antes': old_value,
-                    'depois': new_serialized
-                }
+        def build_row_audit_changes(row_data):
+            row_changes = {}
+            for field_name, new_value in applied_field_pairs.items():
+                if (new_value is None and field_name != 'sala_id') or field_name not in row_data:
+                    continue
+                old_value = serialize_audit_value(row_data.get(field_name))
+                new_serialized = serialize_audit_value(new_value)
+                if str(old_value or '') != str(new_serialized or ''):
+                    row_changes[field_name] = {
+                        'antes': old_value,
+                        'depois': new_serialized
+                    }
+            return row_changes
 
         audit_user = build_audit_user(data, authenticated_user, ultima_acao)
-        if novo_status is not None:
-            insert_agendamento_audit(
-                cur,
-                agendamento_id,
-                'status_alterado',
-                audit_user,
-                status_anterior=current_status,
-                status_novo=novo_status,
-                detalhes={'alteracoes': audit_changes} if audit_changes else None
-            )
-        elif release_lock:
-            insert_agendamento_audit(
-                cur,
-                agendamento_id,
-                'bloqueio_liberado',
-                audit_user,
-                status_anterior=current_status,
-                status_novo=current_status,
-                detalhes={'cancelado_por_username_anterior': cancelado_por_username}
-            )
-        elif audit_changes:
-            insert_agendamento_audit(
-                cur,
-                agendamento_id,
-                'editado',
-                audit_user,
-                status_anterior=current_status,
-                status_novo=current_status,
-                detalhes={'alteracoes': audit_changes}
-            )
+        for target_row in target_rows:
+            row_id = target_row.get('id')
+            row_status = target_row.get('status')
+            row_changes = build_row_audit_changes(target_row)
+            if novo_status is not None:
+                insert_agendamento_audit(
+                    cur,
+                    row_id,
+                    'status_alterado',
+                    audit_user,
+                    status_anterior=row_status,
+                    status_novo=novo_status,
+                    detalhes={'alteracoes': row_changes} if row_changes else None
+                )
+            elif release_lock:
+                insert_agendamento_audit(
+                    cur,
+                    row_id,
+                    'bloqueio_liberado',
+                    audit_user,
+                    status_anterior=row_status,
+                    status_novo=row_status,
+                    detalhes={'cancelado_por_username_anterior': target_row.get('cancelado_por_username')}
+                )
+            elif row_changes:
+                details = {'alteracoes': row_changes}
+                if effective_recurrence_scope != 'single':
+                    details['recorrencia_escopo'] = effective_recurrence_scope
+                    details['recorrencia_grupo_id'] = recurrence_group_id
+                insert_agendamento_audit(
+                    cur,
+                    row_id,
+                    'editado',
+                    audit_user,
+                    status_anterior=row_status,
+                    status_novo=row_status,
+                    detalhes=details
+                )
         conn.commit()
         invalidate_agendamentos_list_cache()
         cur.close()
         conn.close()
 
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'updated': updated_count,
+            'updated_ids': target_ids,
+            'recurrence_scope': effective_recurrence_scope,
+            'skipped_fields': skipped_fields
+        })
     except Exception as e:
         print('Erro ao atualizar agendamento:', e)
         try:
@@ -6502,6 +6581,14 @@ def deletar_agendamento(agendamento_id):
             data.get('delete_series') or
             ''
         ).strip().lower() in ('1', 'true', 'yes', 'sim', 's')
+        delete_scope = normalize_recurrence_scope(
+            data.get('delete_scope') or
+            data.get('deleteScope') or
+            data.get('recurrence_scope') or
+            data.get('recurrenceScope')
+        )
+        if delete_repetitions and delete_scope == 'single':
+            delete_scope = 'all'
         authenticated_user, _auth_error = get_authenticated_user()
         conn = get_connection()
         cur = conn.cursor()
@@ -6548,12 +6635,27 @@ def deletar_agendamento(agendamento_id):
         rows_to_delete = [row_data]
         recurrence_group_id = row_data.get('recorrencia_grupo_id')
 
-        if delete_repetitions and recurrence_group_id:
+        if delete_scope != 'single' and recurrence_group_id:
+            target_params = [recurrence_group_id]
+            target_where = 'recorrencia_grupo_id = %s'
+            if delete_scope == 'weekday':
+                target_where += ' AND EXTRACT(DOW FROM data::date) = EXTRACT(DOW FROM %s::date)'
+                target_params.append(row_data.get('data'))
             cur.execute(
-                f"SELECT {', '.join(select_fields)} FROM agendamentos WHERE recorrencia_grupo_id = %s",
-                (recurrence_group_id,)
+                f"""
+                SELECT {', '.join(select_fields)}
+                FROM agendamentos
+                WHERE {target_where}
+                ORDER BY data ASC, hora_inicio ASC, id ASC
+                """,
+                tuple(target_params)
             )
             rows_to_delete = [dict(zip(field_names, item)) for item in cur.fetchall()]
+            if not rows_to_delete:
+                delete_scope = 'single'
+                rows_to_delete = [row_data]
+        elif not recurrence_group_id:
+            delete_scope = 'single'
 
         target_ids = sorted({int(item['id']) for item in rows_to_delete})
         audit_user = build_audit_user(data, authenticated_user)
@@ -6573,7 +6675,8 @@ def deletar_agendamento(agendamento_id):
                     'hora_inicio': serialize_audit_value(item.get('hora_inicio')),
                     'hora_fim': serialize_audit_value(item.get('hora_fim')),
                     'recorrencia_grupo_id': recurrence_group_id,
-                    'exclusao_recorrencia': bool(delete_repetitions and recurrence_group_id)
+                    'exclusao_recorrencia': bool(delete_scope != 'single' and recurrence_group_id),
+                    'recorrencia_escopo': delete_scope
                 }
             )
         id_placeholders = ', '.join(['%s'] * len(target_ids))
@@ -6590,7 +6693,8 @@ def deletar_agendamento(agendamento_id):
             'success': True,
             'deleted': deleted_count,
             'deleted_ids': target_ids,
-            'deleted_repetitions': bool(delete_repetitions and recurrence_group_id and len(target_ids) > 1)
+            'deleted_repetitions': bool(delete_scope != 'single' and recurrence_group_id and len(target_ids) > 1),
+            'delete_scope': delete_scope
         })
     except Exception as e:
         print('Erro ao deletar agendamento:', e)

@@ -236,6 +236,85 @@
             });
         }
 
+        function showChoiceConfirm({ title, message, choices = [], cancelText = 'Cancelar' }) {
+            if (!choices.length) {
+                return Promise.resolve(null);
+            }
+
+            return new Promise(resolve => {
+                const overlay = document.createElement('div');
+                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+
+                const panel = document.createElement('div');
+                panel.className = 'bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4';
+
+                const titleEl = document.createElement('h3');
+                titleEl.className = 'text-lg font-bold text-gray-900';
+                titleEl.textContent = title || 'Escolha uma opcao';
+
+                const messageEl = document.createElement('p');
+                messageEl.className = 'text-sm text-gray-600 whitespace-pre-line';
+                messageEl.textContent = message || '';
+
+                const choicesEl = document.createElement('div');
+                choicesEl.className = 'space-y-2';
+
+                const finish = (value) => {
+                    document.removeEventListener('keydown', onKeyDown);
+                    overlay.remove();
+                    resolve(value);
+                };
+
+                const onKeyDown = (event) => {
+                    if (event.key === 'Escape') {
+                        finish(null);
+                    }
+                };
+
+                choices.forEach(choice => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = choice.className || 'w-full text-left border border-gray-200 hover:border-blue-300 hover:bg-blue-50 rounded-lg px-4 py-3 transition';
+
+                    const label = document.createElement('div');
+                    label.className = 'font-semibold text-gray-900';
+                    label.textContent = choice.label;
+                    button.appendChild(label);
+
+                    if (choice.description) {
+                        const description = document.createElement('div');
+                        description.className = 'text-xs text-gray-500 mt-1';
+                        description.textContent = choice.description;
+                        button.appendChild(description);
+                    }
+
+                    button.onclick = () => finish(choice.value);
+                    choicesEl.appendChild(button);
+                });
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.className = 'w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg font-medium';
+                cancelBtn.textContent = cancelText;
+                cancelBtn.onclick = () => finish(null);
+
+                overlay.addEventListener('click', (event) => {
+                    if (event.target === overlay) {
+                        finish(null);
+                    }
+                });
+
+                panel.appendChild(titleEl);
+                panel.appendChild(messageEl);
+                panel.appendChild(choicesEl);
+                panel.appendChild(cancelBtn);
+                overlay.appendChild(panel);
+                document.body.appendChild(overlay);
+                document.addEventListener('keydown', onKeyDown);
+                setTimeout(() => choicesEl.querySelector('button')?.focus(), 0);
+            });
+        }
+
         function refreshActiveScheduleViews() {
             if (currentView === 'weekly') {
                 loadWeeklyScheduleGrid();
@@ -5785,6 +5864,124 @@
             return appointments.filter(item => getAppointmentRecurrenceGroupId(item) === groupId);
         }
 
+        function getAppointmentWeekday(appointment) {
+            const date = parseLocalDate(normalizeDate(appointment?.date || ''));
+            return date ? date.getDay() : null;
+        }
+
+        function getAppointmentRecurrenceTotal(appointment, loadedCount = 0) {
+            const total = Number(
+                appointment?.recurrenceTotal ??
+                appointment?.recorrencia_total ??
+                appointment?.repeatTotal ??
+                0
+            );
+            return total > loadedCount ? total : loadedCount;
+        }
+
+        function shouldOfferRecurrenceScope(appointment) {
+            if (!getAppointmentRecurrenceGroupId(appointment)) return false;
+            const loadedSiblings = getRecurrenceSiblings(appointment);
+            return getAppointmentRecurrenceTotal(appointment, loadedSiblings.length) > 1;
+        }
+
+        function getLocalRecurrenceTargets(appointment, scope) {
+            if (!appointment || scope === 'single') return appointment ? [appointment] : [];
+            const siblings = getRecurrenceSiblings(appointment);
+            if (scope === 'all') return siblings.length ? siblings : [appointment];
+            if (scope === 'weekday') {
+                const weekday = getAppointmentWeekday(appointment);
+                const weekdayTargets = siblings.filter(item => getAppointmentWeekday(item) === weekday);
+                return weekdayTargets.length ? weekdayTargets : [appointment];
+            }
+            return [appointment];
+        }
+
+        function hasRepeatableAppointmentChanges(previousAppointment, nextAppointment) {
+            if (!previousAppointment || !nextAppointment) return false;
+            const comparableFields = [
+                'professionalId',
+                'patientId',
+                'roomId',
+                'time',
+                'endTime',
+                'type',
+                'quantidade_sessoes'
+            ];
+            return comparableFields.some(field => String(previousAppointment[field] ?? '') !== String(nextAppointment[field] ?? ''));
+        }
+
+        async function chooseRecurringAppointmentScope(appointment, actionLabel, danger = false) {
+            if (!shouldOfferRecurrenceScope(appointment)) {
+                return 'single';
+            }
+
+            const loadedSiblings = getRecurrenceSiblings(appointment);
+            const loadedTotal = loadedSiblings.length || 1;
+            const serverTotal = getAppointmentRecurrenceTotal(appointment, loadedTotal);
+            const weekday = getAppointmentWeekday(appointment);
+            const weekdayLabels = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+            const weekdayLabel = weekdayLabels[weekday] || 'mesmo dia';
+            const sameWeekdayCount = getLocalRecurrenceTargets(appointment, 'weekday').length;
+            const countHint = serverTotal > loadedTotal
+                ? `O servidor tambem considera repeticoes que nao estao carregadas nesta tela.`
+                : `Repeticoes carregadas nesta tela: ${loadedTotal}.`;
+
+            return showChoiceConfirm({
+                title: `${actionLabel} repeticoes`,
+                message: `Este agendamento faz parte de uma serie.\nEscolha onde aplicar.\n\n${countHint}`,
+                choices: [
+                    {
+                        value: 'single',
+                        label: 'So este agendamento',
+                        description: 'Aplica somente no horario aberto agora.'
+                    },
+                    {
+                        value: 'weekday',
+                        label: `Mesmo dia da semana (${weekdayLabel})`,
+                        description: `Aplica nas repeticoes de ${weekdayLabel}. Carregadas aqui: ${sameWeekdayCount}.`
+                    },
+                    {
+                        value: 'all',
+                        label: 'Toda a serie',
+                        description: `Aplica em todas as repeticoes da serie${serverTotal ? ` (${serverTotal})` : ''}.`,
+                        className: danger
+                            ? 'w-full text-left border border-red-200 hover:border-red-400 hover:bg-red-50 rounded-lg px-4 py-3 transition'
+                            : 'w-full text-left border border-blue-200 hover:border-blue-400 hover:bg-blue-50 rounded-lg px-4 py-3 transition'
+                    }
+                ]
+            });
+        }
+
+        function applyAppointmentEditToLoadedTargets(nextAppointment, targetIds, scope = 'single') {
+            const idSet = new Set((targetIds || []).map(id => String(id)));
+            if (!idSet.size) {
+                idSet.add(String(nextAppointment.id));
+            }
+
+            appointments = appointments.map(item => {
+                if (!idSet.has(String(item.id))) {
+                    return item;
+                }
+                return {
+                    ...item,
+                    professionalId: nextAppointment.professionalId,
+                    patientId: nextAppointment.patientId,
+                    roomId: nextAppointment.roomId,
+                    date: scope === 'single' ? nextAppointment.date : item.date,
+                    time: nextAppointment.time,
+                    endTime: nextAppointment.endTime,
+                    quantidade_sessoes: nextAppointment.quantidade_sessoes,
+                    clientName: nextAppointment.clientName,
+                    type: nextAppointment.type,
+                    observations: scope === 'single' ? nextAppointment.observations : item.observations,
+                    status: item.status || nextAppointment.status || 'agendado',
+                    lastAction: nextAppointment.lastAction
+                };
+            });
+            localStorage.setItem('appointments', JSON.stringify(appointments));
+        }
+
         function buildLocalAppointmentFromServer(srv, fallback = {}) {
             const recurrenceGroupId = srv.recorrencia_grupo_id || srv.recurrenceGroupId || fallback.recurrenceGroupId || '';
             return {
@@ -7512,7 +7709,7 @@
             });
         }
 
-        function saveAppointment(event) {
+        async function saveAppointment(event) {
             event.preventDefault();
             if (isSavingAppointment) {
                 return;
@@ -7645,14 +7842,32 @@
                 }
             };
 
-            const patientRoomConflict = findPatientRoomTimeConflict(appointment, appointmentId ? [appointmentId] : []);
+            let editRecurrenceScope = 'single';
+            let editRecurrenceTargetIds = appointmentId ? [appointmentId] : [];
+            const existingAppointmentForScope = appointmentId ? appointments.find(a => String(a.id) === String(appointmentId)) : null;
+            if (isEditing && hasRepeatableAppointmentChanges(existingAppointmentForScope, appointment)) {
+                editRecurrenceScope = await chooseRecurringAppointmentScope(existingAppointmentForScope, 'Salvar nas', false);
+                if (!editRecurrenceScope) {
+                    setAppointmentSavingState(false);
+                    return;
+                }
+                if (editRecurrenceScope !== 'single' && existingAppointmentForScope?.date !== appointment.date) {
+                    alert('Para aplicar em varias repeticoes, mantenha a data deste agendamento. Se quiser mudar a data, escolha "So este agendamento".');
+                    setAppointmentSavingState(false);
+                    return;
+                }
+                editRecurrenceTargetIds = getLocalRecurrenceTargets(existingAppointmentForScope, editRecurrenceScope)
+                    .map(item => String(item.id));
+            }
+
+            const patientRoomConflict = findPatientRoomTimeConflict(appointment, editRecurrenceTargetIds);
             if (patientRoomConflict) {
                 alert(`Paciente em duas salas no mesmo horario.\n\nConflito encontrado:\n${describePatientRoomConflict(patientRoomConflict)}\n\nAjuste a sala ou o horario antes de salvar.`);
                 setAppointmentSavingState(false);
                 return;
             }
 
-            if (!(!isEditing && isRepeatEnabled()) && !confirmRoomConflictIfNeeded(appointment, appointmentId ? [appointmentId] : [])) {
+            if (!(!isEditing && isRepeatEnabled()) && !confirmRoomConflictIfNeeded(appointment, editRecurrenceTargetIds)) {
                 setAppointmentSavingState(false);
                 updateRoomAvailabilityHint(appointmentId);
                 return;
@@ -7706,6 +7921,7 @@
                             hora_inicio: appointment.time,
                             hora_fim: appointment.endTime || appointment.time,
                             quantidade_sessoes: appointment.quantidade_sessoes,
+                            recurrence_scope: editRecurrenceScope,
                             ultima_acao: currentUser ? (currentUser.name || currentUser.username) : 'Sistema',
                             usuario_username: currentUser ? currentUser.username : null
                         })
@@ -7715,24 +7931,35 @@
                         debugLog('[saveAppointment] Server response:', data.success ? 'SUCCESS' : 'FAILED');
                         if (data && data.success) {
                             debugLog('[saveAppointment] Updating local appointments[' + index + ']');
-                            if (index !== -1) {
-                                appointments[index] = appointment;
+                            const updatedIds = Array.isArray(data.updated_ids) && data.updated_ids.length
+                                ? data.updated_ids.map(id => String(id))
+                                : editRecurrenceTargetIds;
+                            if (index !== -1 || updatedIds.length) {
+                                applyAppointmentEditToLoadedTargets(appointment, updatedIds, editRecurrenceScope);
                                 debugLog('[saveAppointment] Appointment after update:', {
-                                    id: appointments[index].id,
-                                    date: appointments[index].date,
-                                    time: appointments[index].time,
-                                    prof: appointments[index].professionalId,
-                                    client: appointments[index].clientName
+                                    id: appointment.id,
+                                    date: appointment.date,
+                                    time: appointment.time,
+                                    prof: appointment.professionalId,
+                                    client: appointment.clientName,
+                                    scope: editRecurrenceScope
                                 });
-                                localStorage.setItem('appointments', JSON.stringify(appointments));
                                 debugLog('[saveAppointment] Total appointments in cache:', appointments.length);
                             }
                             debugLog('[saveAppointment] Refreshing active schedule view...');
                             refreshActiveScheduleViews();
+                            syncAppointmentsForAgendaView({ force: true }).catch(err => {
+                                console.warn('Nao foi possivel sincronizar agenda apos edicao:', err);
+                            });
                             debugLog('[saveAppointment] ===== EDIT FLOW END (SUCCESS) =====');
                             closeModal('scheduleModal');
                             setAppointmentSavingState(false);
-                            showSuccessMessage('✅ Agendamento atualizado com sucesso!');
+                            const successText = editRecurrenceScope === 'all'
+                                ? 'Serie atualizada com sucesso!'
+                                : editRecurrenceScope === 'weekday'
+                                    ? 'Repeticoes deste dia da semana atualizadas com sucesso!'
+                                    : 'Agendamento atualizado com sucesso!';
+                            showSuccessMessage(successText);
                         } else {
                             console.warn('Falha ao atualizar agendamento no servidor:', data);
                             setAppointmentSavingState(false);
@@ -7887,8 +8114,6 @@
 
             const professional = professionals.find(p => p.id === appointment.professionalId);
             const profName = professional ? professional.name : 'Profissional';
-            const recurrenceGroupId = getAppointmentRecurrenceGroupId(appointment);
-            const recurrenceSiblings = getRecurrenceSiblings(appointment);
 
             const confirmDelete = await showYesNoConfirm({
                 title: 'Confirmar exclusao',
@@ -7908,25 +8133,16 @@
                 return;
             }
 
-            const deleteRepetitions = recurrenceSiblings.length > 1
-                ? await showYesNoConfirm({
-                    title: 'Excluir repeticoes?',
-                    message: `Este agendamento faz parte de uma repeticao com ${recurrenceSiblings.length} horario(s).\n\nDeseja excluir todas as repeticoes tambem?`,
-                    yesText: 'Sim, excluir todas',
-                    noText: 'N\u00e3o, s\u00f3 este',
-                    danger: true
-                })
-                : false;
-            const idsToRemove = deleteRepetitions
-                ? recurrenceSiblings.map(item => String(item.id))
-                : [String(appointmentId)];
+            const deleteScope = await chooseRecurringAppointmentScope(appointment, 'Excluir nas', true);
+            if (!deleteScope) {
+                return;
+            }
+            const idsToRemove = getLocalRecurrenceTargets(appointment, deleteScope)
+                .map(item => String(item.id));
 
             const removeAppointmentsLocally = (serverDeletedIds = []) => {
                 const deletedIdSet = new Set(serverDeletedIds.map(id => String(id)));
                 appointments = appointments.filter(item => {
-                    if (deleteRepetitions && recurrenceGroupId) {
-                        return getAppointmentRecurrenceGroupId(item) !== recurrenceGroupId;
-                    }
                     if (deletedIdSet.size) {
                         return !deletedIdSet.has(String(item.id));
                     }
@@ -7948,7 +8164,8 @@
                     method: 'DELETE',
                     headers,
                     body: JSON.stringify({
-                        delete_repetitions: deleteRepetitions
+                        delete_scope: deleteScope,
+                        delete_repetitions: deleteScope === 'all'
                     })
                 })
                 .then(res => {
@@ -7963,7 +8180,7 @@
                     if (data && data.success) {
                         const serverDeletedIds = Array.isArray(data.deleted_ids) ? data.deleted_ids : [];
                         removeAppointmentsLocally(serverDeletedIds);
-                        const deletedCount = data.deleted || (deleteRepetitions ? recurrenceSiblings.length : 1);
+                        const deletedCount = data.deleted || idsToRemove.length || 1;
                         showSuccessMessage(`${deletedCount} agendamento(s) excluido(s) com sucesso!`);
                     } else {
                         console.warn('Erro ao excluir agendamento no servidor:', data);
@@ -7992,7 +8209,7 @@
                 });
             } else {
                 removeAppointmentsLocally();
-                const deletedCount = deleteRepetitions ? recurrenceSiblings.length : 1;
+                const deletedCount = idsToRemove.length || 1;
                 showSuccessMessage(`${deletedCount} agendamento(s) excluido(s) localmente.`);
             }
             return;
