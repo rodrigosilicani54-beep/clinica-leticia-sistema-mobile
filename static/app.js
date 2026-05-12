@@ -4655,12 +4655,32 @@
             return getWeekDays(roomsAvailabilityWeek).slice(1, 7);
         }
 
-        function getRoomAppointmentsInWeek(roomId, weekDates) {
+        function getRoomsAvailabilityHourRange() {
+            const hourValue = normalizeTime(document.getElementById('roomsAvailabilityHourFilter')?.value || '');
+            if (!hourValue || !isValidTime(hourValue)) return null;
+            const startMinutes = timeToMinutes(hourValue);
+            return {
+                startTime: hourValue,
+                endTime: minutesToTime(startMinutes + 60),
+                startMinutes,
+                endMinutes: startMinutes + 60
+            };
+        }
+
+        function appointmentMatchesHourRange(appointment, hourRange) {
+            if (!hourRange) return true;
+            const startMinutes = timeToMinutes(normalizeTime(appointment.time));
+            const endMinutes = timeToMinutes(normalizeTime(appointment.endTime || appointment.time));
+            return endMinutes > hourRange.startMinutes && startMinutes < hourRange.endMinutes;
+        }
+
+        function getRoomAppointmentsInWeek(roomId, weekDates, hourRange = null) {
             return appointments
                 .filter(appointment =>
                     isAppointmentUsingRoom(appointment) &&
                     String(appointment.roomId || appointment.sala_id || '') === String(roomId) &&
-                    weekDates.includes(String(appointment.date || ''))
+                    weekDates.includes(String(appointment.date || '')) &&
+                    appointmentMatchesHourRange(appointment, hourRange)
                 )
                 .sort((a, b) => {
                     return String(a.date || '').localeCompare(String(b.date || '')) ||
@@ -4678,16 +4698,18 @@
             const weekDates = weekDays.map(day => formatDate(day));
             const search = normalizeRoomNameText(document.getElementById('roomsAvailabilitySearch')?.value || '');
             const statusFilter = document.getElementById('roomsAvailabilityStatusFilter')?.value || 'all';
+            const hourRange = getRoomsAvailabilityHourRange();
             const weekStart = formatDateBR(weekDays[0]);
             const weekEnd = formatDateBR(weekDays[weekDays.length - 1]);
+            const hourLabel = hourRange ? ` | Horario ${hourRange.startTime} ate ${hourRange.endTime}` : '';
 
-            label.textContent = `Semana ${weekStart} ate ${weekEnd}`;
+            label.textContent = `Semana ${weekStart} ate ${weekEnd}${hourLabel}`;
 
             const roomRows = rooms
                 .filter(room => room.active !== false && !isRemovedRoomName(room.name))
                 .map(room => ({
                     room,
-                    appointments: getRoomAppointmentsInWeek(room.id, weekDates)
+                    appointments: getRoomAppointmentsInWeek(room.id, weekDates, hourRange)
                 }))
                 .filter(item => !search || normalizeRoomNameText(item.room.name).includes(search))
                 .filter(item => {
@@ -4699,14 +4721,15 @@
             const totalRooms = rooms.filter(room => room.active !== false && !isRemovedRoomName(room.name)).length;
             const occupiedCount = rooms
                 .filter(room => room.active !== false && !isRemovedRoomName(room.name))
-                .filter(room => getRoomAppointmentsInWeek(room.id, weekDates).length > 0)
+                .filter(room => getRoomAppointmentsInWeek(room.id, weekDates, hourRange).length > 0)
                 .length;
             const availableCount = totalRooms - occupiedCount;
+            const availabilityLabel = hourRange ? `no horario ${hourRange.startTime} ate ${hourRange.endTime}` : 'na semana';
 
             summary.innerHTML = `
                 <span class="font-semibold">${roomRows.length}</span> sala(s) exibida(s) |
-                <span class="text-green-700 font-semibold">${availableCount}</span> disponivel(is) |
-                <span class="text-red-700 font-semibold">${occupiedCount}</span> ocupada(s)
+                <span class="text-green-700 font-semibold">${availableCount}</span> disponivel(is) ${availabilityLabel} |
+                <span class="text-red-700 font-semibold">${occupiedCount}</span> ocupada(s) ${availabilityLabel}
             `;
 
             if (!roomRows.length) {
@@ -4742,14 +4765,14 @@
                                     <span class="w-4 h-4 rounded border border-gray-300 flex-shrink-0" style="background:${escapeAuditHtml(room.color || '#e5e7eb')}"></span>
                                     <div class="font-bold text-gray-900 truncate">${escapeAuditHtml(room.name)}</div>
                                 </div>
-                                <div class="text-xs text-gray-500 mt-1">${roomAppointments.length} agendamento(s) na semana</div>
+                                <div class="text-xs text-gray-500 mt-1">${roomAppointments.length} agendamento(s) ${hourRange ? 'nessa hora' : 'na semana'}</div>
                             </div>
                             <span class="px-2 py-1 rounded-full border text-xs font-bold ${statusClass}">
                                 ${occupied ? 'Ocupada' : 'Disponivel'}
                             </span>
                         </div>
                         <div class="mt-3 space-y-2">
-                            ${occupied ? appointmentLines : '<div class="p-3 rounded bg-green-50 text-green-700 text-sm font-medium">Sem agendamentos nesta semana.</div>'}
+                            ${occupied ? appointmentLines : `<div class="p-3 rounded bg-green-50 text-green-700 text-sm font-medium">Sem agendamentos ${hourRange ? 'nessa hora.' : 'nesta semana.'}</div>`}
                             ${hiddenCount > 0 ? `<div class="text-xs text-gray-500 text-center">+ ${hiddenCount} outro(s) agendamento(s)</div>` : ''}
                         </div>
                     </div>

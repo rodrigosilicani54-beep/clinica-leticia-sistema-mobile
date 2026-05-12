@@ -1825,7 +1825,7 @@
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 mb-4 md:grid-cols-[auto_auto_1fr_auto]">
+            <div class="grid grid-cols-1 gap-3 mb-4 md:grid-cols-[auto_auto_1fr_auto_auto]">
                 <div class="flex gap-2">
                     <button type="button" onclick="previousRoomsAvailabilityWeek()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium">
                         Anterior
@@ -1838,6 +1838,26 @@
                     Semana atual
                 </button>
                 <input id="roomsAvailabilitySearch" oninput="renderRoomsAvailability()" type="text" placeholder="Filtrar sala..." class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-cyan-500">
+                <select id="roomsAvailabilityHourFilter" onchange="renderRoomsAvailability()" class="p-2 border rounded-lg focus:ring-2 focus:ring-cyan-500">
+                    <option value="">Todas as horas</option>
+                    <option value="06:00">06:00 - 07:00</option>
+                    <option value="07:00">07:00 - 08:00</option>
+                    <option value="08:00">08:00 - 09:00</option>
+                    <option value="09:00">09:00 - 10:00</option>
+                    <option value="10:00">10:00 - 11:00</option>
+                    <option value="11:00">11:00 - 12:00</option>
+                    <option value="12:00">12:00 - 13:00</option>
+                    <option value="13:00">13:00 - 14:00</option>
+                    <option value="14:00">14:00 - 15:00</option>
+                    <option value="15:00">15:00 - 16:00</option>
+                    <option value="16:00">16:00 - 17:00</option>
+                    <option value="17:00">17:00 - 18:00</option>
+                    <option value="18:00">18:00 - 19:00</option>
+                    <option value="19:00">19:00 - 20:00</option>
+                    <option value="20:00">20:00 - 21:00</option>
+                    <option value="21:00">21:00 - 22:00</option>
+                    <option value="22:00">22:00 - 23:00</option>
+                </select>
                 <select id="roomsAvailabilityStatusFilter" onchange="renderRoomsAvailability()" class="p-2 border rounded-lg focus:ring-2 focus:ring-cyan-500">
                     <option value="all">Todas</option>
                     <option value="available">Disponiveis</option>
