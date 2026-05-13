@@ -7623,7 +7623,7 @@
                 }
             }
 
-            if (baseAppointment.roomId) {
+            if (baseAppointment.roomId && isAppointmentUsingRoom(baseAppointment)) {
                 const roomConflicts = availableDates
                     .map(date => ({
                         date,
@@ -8367,7 +8367,10 @@
             }
 
             if (typeSelect) {
-                typeSelect.addEventListener('change', updateDateVisibility);
+                typeSelect.addEventListener('change', () => {
+                    updateDateVisibility();
+                    updateRoomAvailabilityHint();
+                });
                 updateDateVisibility();
             }
 
@@ -10939,9 +10942,21 @@
             await Promise.all(dates.map(dateValue => ensureRemarkAppointmentWindowLoaded(appointment, dateValue)));
         }
 
+        function isClsAvailabilityType(type) {
+            return String(type || '').trim().toLowerCase() === 'cls';
+        }
+
+        function isRoomBlockingAppointmentType(type) {
+            return !isClsAvailabilityType(type);
+        }
+
         function isAppointmentUsingRoom(appointment) {
             const status = normalizeScheduleStatus(appointment.status || 'agendado');
-            return !['cancelado_profissional', 'cancelado_paciente', 'faltou'].includes(status);
+            if (['cancelado_profissional', 'cancelado_paciente', 'faltou'].includes(status)) {
+                return false;
+            }
+            const type = appointment.type || appointment.tipo_atendimento || appointment.tipo || '';
+            return isRoomBlockingAppointmentType(type);
         }
 
         function findRoomTimeConflict(roomId, date, startTime, endTime, excludeIds = []) {
@@ -11010,6 +11025,7 @@
             const date = document.getElementById('appointmentDateInput')?.value || '';
             const startTime = normalizeTime(document.getElementById('appointmentTimeInput')?.value || '');
             const endTime = normalizeTime(document.getElementById('appointmentEndInput')?.value || '');
+            const appointmentType = document.getElementById('appointmentType')?.value || '';
             const appointmentId = excludeAppointmentId || document.getElementById('appointmentId')?.value || '';
 
             hint.className = 'text-xs text-gray-500 mt-1';
@@ -11020,6 +11036,11 @@
             }
             if (!date || !isValidTime(startTime) || !isValidTime(endTime)) {
                 hint.textContent = 'Selecione data e horario para verificar disponibilidade.';
+                return;
+            }
+            if (!isRoomBlockingAppointmentType(appointmentType)) {
+                hint.className = 'text-xs text-green-600 mt-1 font-medium';
+                hint.textContent = 'CLS nao ocupa sala; pode compartilhar este horario.';
                 return;
             }
 
@@ -11036,6 +11057,7 @@
 
         function confirmRoomConflictIfNeeded(appointment, excludeIds = []) {
             if (!appointment || !appointment.roomId) return true;
+            if (!isAppointmentUsingRoom(appointment)) return true;
             const conflict = findRoomTimeConflict(
                 appointment.roomId,
                 appointment.date,
