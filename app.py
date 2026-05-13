@@ -2978,6 +2978,16 @@ def desbloquear_auditoria():
     })
 
 
+@app.route('/api/auditoria/bloquear', methods=['POST'])
+def bloquear_auditoria():
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    session.pop('auditoria_unlocked_until', None)
+    session.modified = True
+    return jsonify({'success': True, 'unlocked': False})
+
+
 @app.route('/api/auditoria/status', methods=['GET'])
 def status_auditoria():
     admin_check = require_admin()

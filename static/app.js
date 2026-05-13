@@ -1257,6 +1257,7 @@
             currentUser = null;
             userPermissions = null;
             localStorage.removeItem('currentUser');
+            clearStoredAuditUnlock();
             const userInfo = document.querySelector('.user-info');
             if (userInfo) {
                 userInfo.remove();
@@ -2924,6 +2925,19 @@
             } catch (err) {}
         }
 
+        function lockAuditAccess(options = {}) {
+            clearStoredAuditUnlock();
+            if (!currentUser || !userPermissions?.canViewAudit) return;
+            try {
+                fetch(apiUrl('/api/auditoria/bloquear'), {
+                    method: 'POST',
+                    headers: getAuthenticatedHeaders(false),
+                    credentials: 'same-origin',
+                    keepalive: !!options.keepalive
+                }).catch(() => {});
+            } catch (err) {}
+        }
+
         function isAuditUnlockedLocally() {
             return getStoredAuditUnlockUntil() > Date.now();
         }
@@ -3049,7 +3063,7 @@
             if (!(await ensureAuditAccess())) {
                 return;
             }
-            hideAllViews();
+            hideAllViews({ keepAuditUnlock: true });
             document.getElementById('auditView').style.display = 'block';
             currentView = 'audit';
             loadAuditReport();
@@ -3112,7 +3126,16 @@
             */
         }
 
-        function hideAllViews() {
+        function hideAllViews(options = {}) {
+            const auditView = document.getElementById('auditView');
+            const leavingAudit = !options.keepAuditUnlock && (
+                currentView === 'audit' ||
+                (auditView && auditView.style.display !== 'none')
+            );
+            if (leavingAudit) {
+                lockAuditAccess({ keepalive: true });
+            }
+
             document.getElementById('homeView').style.display = 'none';
             const dailyPanelView = document.getElementById('dailyPanelView');
             if (dailyPanelView) dailyPanelView.style.display = 'none';
@@ -3121,10 +3144,15 @@
             document.getElementById('scheduleView').style.display = 'none';
             document.getElementById('professionalsView').style.display = 'none';
             document.getElementById('reportsView').style.display = 'none';
-            const auditView = document.getElementById('auditView');
             if (auditView) auditView.style.display = 'none';
             document.getElementById('weeklyView').style.display = 'none';
         }
+
+        window.addEventListener('pagehide', () => {
+            if (currentView === 'audit' || isAuditUnlockedLocally()) {
+                lockAuditAccess({ keepalive: true });
+            }
+        });
 
         let auditReloadTimer = null;
 
