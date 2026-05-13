@@ -4,6 +4,7 @@
 import os
 import sys
 import base64
+import hmac
 from db import get_connection
 import threading
 from flask import Flask, request, jsonify, send_file, send_from_directory, session
@@ -73,6 +74,68 @@ def get_base_path():
 BASE_DIR = get_base_path()
 APP_HOST = os.environ.get('CLINICA_FLASK_HOST', '0.0.0.0')
 APP_PORT = int(os.environ.get('CLINICA_FLASK_PORT') or os.environ.get('PORT') or '5000')
+AUDIT_ACCESS_TTL_SECONDS = int(os.environ.get('AUDITORIA_TTL_SECONDS') or '900')
+
+
+def get_runtime_config_paths():
+    paths = []
+    explicit_path = os.environ.get('CLINICA_CONFIG') or os.environ.get('CLINICA_DB_CONFIG') or os.environ.get('DB_CONFIG_FILE')
+    if explicit_path:
+        paths.append(Path(explicit_path))
+
+    local_app_data = os.environ.get('LOCALAPPDATA')
+    if local_app_data:
+        paths.append(Path(local_app_data) / 'ClinicaLeticiaSegretti' / 'db_config.json')
+
+    if getattr(sys, 'frozen', False):
+        paths.append(Path(sys.executable).resolve().parent / 'db_config.local.json')
+        bundle_dir = getattr(sys, '_MEIPASS', None)
+        if bundle_dir:
+            paths.append(Path(bundle_dir) / 'db_config.local.json')
+
+    paths.append(Path(BASE_DIR) / 'db_config.local.json')
+    paths.append(Path(__file__).resolve().with_name('db_config.local.json'))
+    return paths
+
+
+def get_runtime_config_value(env_name, *config_names, default=None):
+    env_value = os.environ.get(env_name)
+    if env_value not in (None, ''):
+        return env_value
+
+    seen = set()
+    for path in get_runtime_config_paths():
+        try:
+            resolved = str(path.resolve())
+            if resolved in seen or not path.is_file():
+                continue
+            seen.add(resolved)
+            with path.open('r', encoding='utf-8') as f:
+                config = json.load(f)
+            if not isinstance(config, dict):
+                continue
+            for name in config_names:
+                value = config.get(name)
+                if value not in (None, ''):
+                    return value
+        except Exception:
+            continue
+    return default
+
+
+def get_auditoria_password():
+    value = get_runtime_config_value(
+        'AUDITORIA_SENHA',
+        'AUDITORIA_SENHA',
+        'auditoria_senha',
+        'audit_password',
+        'auditPassword'
+    )
+    return str(value or '').strip()
+
+
+def get_current_timestamp_seconds():
+    return int(datetime.utcnow().timestamp())
 
 # =======================
 # FLASK API
@@ -2806,6 +2869,7 @@ def logout_user():
     except Exception:
         pass
     session.pop('current_user', None)
+    session.pop('auditoria_unlocked_until', None)
     return jsonify({'success': True})
 
 
@@ -2826,10 +2890,84 @@ def serialize_audit_log_row(row, column_names):
     return item
 
 
+def get_auditoria_unlocked_until():
+    try:
+        return int(session.get('auditoria_unlocked_until') or 0)
+    except Exception:
+        return 0
+
+
+def is_auditoria_unlocked():
+    return get_auditoria_unlocked_until() > get_current_timestamp_seconds()
+
+
+def require_auditoria_password_unlocked():
+    if is_auditoria_unlocked():
+        return None
+    return jsonify({
+        'success': False,
+        'error': 'Senha da auditoria necessaria',
+        'requires_audit_password': True
+    }), 403
+
+
+@app.route('/api/auditoria/desbloquear', methods=['POST'])
+def desbloquear_auditoria():
+    authenticated_user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
+    if normalize_level(authenticated_user.get('level')) != 'admin':
+        return jsonify({'success': False, 'error': 'Acesso negado'}), 403
+
+    audit_password = get_auditoria_password()
+    if not audit_password:
+        return jsonify({
+            'success': False,
+            'error': 'Senha de auditoria nao configurada no servidor',
+            'audit_password_configured': False
+        }), 500
+
+    data = request.json or {}
+    provided_password = str(data.get('senha') or data.get('password') or '').strip()
+    if not provided_password or not hmac.compare_digest(provided_password, audit_password):
+        session.pop('auditoria_unlocked_until', None)
+        session.modified = True
+        return jsonify({'success': False, 'error': 'Senha da auditoria incorreta'}), 403
+
+    now = get_current_timestamp_seconds()
+    unlocked_until = now + AUDIT_ACCESS_TTL_SECONDS
+    session['auditoria_unlocked_until'] = unlocked_until
+    session.modified = True
+    return jsonify({
+        'success': True,
+        'unlocked': True,
+        'expires_in': AUDIT_ACCESS_TTL_SECONDS,
+        'expires_at': unlocked_until
+    })
+
+
+@app.route('/api/auditoria/status', methods=['GET'])
+def status_auditoria():
+    admin_check = require_admin()
+    if admin_check:
+        return admin_check
+    unlocked_until = get_auditoria_unlocked_until()
+    now = get_current_timestamp_seconds()
+    return jsonify({
+        'success': True,
+        'unlocked': unlocked_until > now,
+        'expires_in': max(0, unlocked_until - now),
+        'audit_password_configured': bool(get_auditoria_password())
+    })
+
+
 def query_audit_logs(force_deleted=False):
     auth_check = require_admin()
     if auth_check:
         return auth_check
+    audit_lock = require_auditoria_password_unlocked()
+    if audit_lock:
+        return audit_lock
 
     try:
         limit = int(request.args.get('limit') or 100)

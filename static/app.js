@@ -1354,6 +1354,7 @@
                 fetch(apiUrl('/api/logout'), { method: 'POST' }).catch(() => {});
                 // Clear user session
                 localStorage.removeItem('currentUser');
+                clearStoredAuditUnlock();
                 currentUser = null;
                 userPermissions = null;
                 
@@ -2890,9 +2891,153 @@
             generateReports();
         }
 
-        function showAuditView() {
+        const AUDIT_UNLOCK_STORAGE_KEY = 'auditoriaUnlockedUntil';
+
+        function getStoredAuditUnlockUntil() {
+            try {
+                return Number(sessionStorage.getItem(AUDIT_UNLOCK_STORAGE_KEY) || 0);
+            } catch (err) {
+                return 0;
+            }
+        }
+
+        function setStoredAuditUnlock(seconds) {
+            const expiresAt = Date.now() + (Math.max(1, Number(seconds) || 900) * 1000);
+            try {
+                sessionStorage.setItem(AUDIT_UNLOCK_STORAGE_KEY, String(expiresAt));
+            } catch (err) {}
+            return expiresAt;
+        }
+
+        function clearStoredAuditUnlock() {
+            try {
+                sessionStorage.removeItem(AUDIT_UNLOCK_STORAGE_KEY);
+            } catch (err) {}
+        }
+
+        function isAuditUnlockedLocally() {
+            return getStoredAuditUnlockUntil() > Date.now();
+        }
+
+        function showAuditPasswordPrompt(errorMessage = '') {
+            return new Promise(resolve => {
+                const overlay = document.createElement('div');
+                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4';
+                overlay.style.zIndex = '100000';
+
+                const panel = document.createElement('div');
+                panel.className = 'bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4';
+
+                const title = document.createElement('h3');
+                title.className = 'text-lg font-bold text-gray-900';
+                title.textContent = 'Senha da auditoria';
+
+                const message = document.createElement('p');
+                message.className = 'text-sm text-gray-600';
+                message.textContent = 'Digite a senha extra para liberar a auditoria por 15 minutos.';
+
+                const input = document.createElement('input');
+                input.type = 'password';
+                input.className = 'w-full p-3 border rounded-lg focus:ring-2 focus:ring-gray-500';
+                input.placeholder = 'Senha';
+
+                const error = document.createElement('div');
+                error.className = errorMessage ? 'text-sm text-red-700 bg-red-50 rounded-lg p-3' : 'hidden';
+                error.textContent = errorMessage || '';
+
+                const actions = document.createElement('div');
+                actions.className = 'flex gap-2 justify-end';
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.className = 'bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium';
+                cancelBtn.textContent = 'Cancelar';
+
+                const confirmBtn = document.createElement('button');
+                confirmBtn.type = 'button';
+                confirmBtn.className = 'bg-gray-900 hover:bg-black text-white px-4 py-2 rounded-lg font-medium';
+                confirmBtn.textContent = 'Liberar';
+
+                const finish = (value) => {
+                    document.removeEventListener('keydown', onKeyDown);
+                    overlay.remove();
+                    resolve(value);
+                };
+
+                const submit = () => {
+                    const password = input.value.trim();
+                    if (!password) {
+                        error.className = 'text-sm text-red-700 bg-red-50 rounded-lg p-3';
+                        error.textContent = 'Informe a senha da auditoria.';
+                        input.focus();
+                        return;
+                    }
+                    finish(password);
+                };
+
+                const onKeyDown = (event) => {
+                    if (event.key === 'Escape') finish(null);
+                    if (event.key === 'Enter') submit();
+                };
+
+                cancelBtn.onclick = () => finish(null);
+                confirmBtn.onclick = submit;
+                overlay.addEventListener('click', (event) => {
+                    if (event.target === overlay) finish(null);
+                });
+
+                actions.appendChild(cancelBtn);
+                actions.appendChild(confirmBtn);
+                panel.appendChild(title);
+                panel.appendChild(message);
+                panel.appendChild(input);
+                panel.appendChild(error);
+                panel.appendChild(actions);
+                overlay.appendChild(panel);
+                document.body.appendChild(overlay);
+                document.addEventListener('keydown', onKeyDown);
+                setTimeout(() => input.focus(), 0);
+            });
+        }
+
+        async function ensureAuditAccess() {
             if (!currentUser || !userPermissions?.canViewAudit) {
                 showPermissionDenied('viewAudit');
+                return false;
+            }
+            if (isAuditUnlockedLocally()) {
+                return true;
+            }
+
+            let errorMessage = '';
+            while (true) {
+                const password = await showAuditPasswordPrompt(errorMessage);
+                if (!password) return false;
+                try {
+                    const response = await fetch(apiUrl('/api/auditoria/desbloquear'), {
+                        method: 'POST',
+                        headers: getAuthenticatedHeaders(true),
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ senha: password })
+                    });
+                    const data = await response.json();
+                    if (data && data.success) {
+                        setStoredAuditUnlock(data.expires_in || 900);
+                        return true;
+                    }
+                    errorMessage = data?.error || 'Senha da auditoria incorreta.';
+                } catch (err) {
+                    errorMessage = 'Nao foi possivel validar a senha da auditoria.';
+                }
+            }
+        }
+
+        async function showAuditView() {
+            if (!currentUser || !userPermissions?.canViewAudit) {
+                showPermissionDenied('viewAudit');
+                return;
+            }
+            if (!(await ensureAuditAccess())) {
                 return;
             }
             hideAllViews();
@@ -3001,6 +3146,10 @@
                 container.innerHTML = '<div class="p-6 text-center text-red-700 bg-red-50">Acesso restrito a administradores.</div>';
                 return;
             }
+            if (!isAuditUnlockedLocally() && !(await ensureAuditAccess())) {
+                container.innerHTML = '<div class="p-6 text-center text-gray-500">Auditoria bloqueada.</div>';
+                return;
+            }
 
             const params = new URLSearchParams({ limit: '200' });
             const search = getAuditInputValue('auditSearchInput');
@@ -3028,6 +3177,12 @@
                 });
                 const data = await response.json();
                 if (!data || !data.success) {
+                    if (response.status === 403 && data?.requires_audit_password) {
+                        clearStoredAuditUnlock();
+                        if (await ensureAuditAccess()) {
+                            return loadAuditReport();
+                        }
+                    }
                     throw new Error(data?.error || 'Nao foi possivel carregar a auditoria.');
                 }
                 const logs = Array.isArray(data.logs) ? data.logs : [];

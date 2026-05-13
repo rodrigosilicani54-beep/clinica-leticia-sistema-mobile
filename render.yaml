@@ -8,6 +8,8 @@ services:
     envVars:
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: AUDITORIA_SENHA
+        sync: false
       - key: DB_HOST
         sync: false
       - key: DB_USER
