@@ -65,8 +65,9 @@
             { value: 'confirmado', label: 'Confirmado', color: 'indigo' },
             { value: 'chegou', label: 'Chegou', color: 'emerald' },
             { value: 'em_atendimento', label: 'Em atendimento', color: 'teal' },
+            { value: 'em_analise', label: 'Em analise', color: 'violet' },
+            { value: 'online', label: 'Online', color: 'sky' },
             { value: 'finalizado', label: 'Finalizado', color: 'green' },
-            { value: 'faltou', label: 'Faltou', color: 'yellow' },
             { value: 'cancelado_paciente', label: 'Cancelado pelo paciente', color: 'orange' },
             { value: 'cancelado_profissional', label: 'Cancelado pelo profissional', color: 'red' }
         ];
@@ -103,6 +104,14 @@
                 'chegou': 'chegou',
                 'presente': 'chegou',
                 'em atendimento': 'em_atendimento',
+                'em analise': 'em_analise',
+                'em análise': 'em_analise',
+                'analise': 'em_analise',
+                'análise': 'em_analise',
+                'online': 'online',
+                'on-line': 'online',
+                'remoto': 'online',
+                'remota': 'online',
                 'finalizado': 'finalizado',
                 'faltou': 'faltou',
                 'falta': 'faltou',
@@ -3498,8 +3507,9 @@
                 total: items.length,
                 confirmados: items.filter(item => normalizeScheduleStatus(item.status) === 'confirmado').length,
                 presentes: items.filter(item => ['chegou', 'em_atendimento'].includes(normalizeScheduleStatus(item.status))).length,
+                emAnalise: items.filter(item => normalizeScheduleStatus(item.status) === 'em_analise').length,
+                online: items.filter(item => normalizeScheduleStatus(item.status) === 'online').length,
                 finalizados: items.filter(item => normalizeScheduleStatus(item.status) === 'finalizado').length,
-                faltas: items.filter(item => normalizeScheduleStatus(item.status) === 'faltou').length,
                 atrasos: items.filter(item => isDailyPanelAppointmentDelayed(item, dateValue)).length
             };
 
@@ -3507,8 +3517,9 @@
                 ['Total', counts.total, 'border-gray-200'],
                 ['Confirmados', counts.confirmados, 'border-indigo-200'],
                 ['Presentes', counts.presentes, 'border-emerald-200'],
+                ['Em analise', counts.emAnalise, 'border-violet-200'],
+                ['Online', counts.online, 'border-sky-200'],
                 ['Finalizados', counts.finalizados, 'border-green-200'],
-                ['Faltas', counts.faltas, 'border-yellow-200'],
                 ['Atrasos', counts.atrasos, 'border-red-200']
             ];
 
@@ -5741,6 +5752,8 @@
                 confirmado: { icon: 'C', label: 'Confirmado', shortLabel: 'Confirmado' },
                 chegou: { icon: '✓', label: 'Chegou', shortLabel: 'Chegou' },
                 em_atendimento: { icon: '▶', label: 'Em atendimento', shortLabel: 'Atendendo' },
+                em_analise: { icon: 'A', label: 'Em analise', shortLabel: 'Analise' },
+                online: { icon: 'O', label: 'Online', shortLabel: 'Online' },
                 agendado: { icon: '○', label: 'Agendado', shortLabel: '' },
                 finalizado: { icon: '✓', label: 'Finalizado', shortLabel: 'Finalizado' },
                 cancelado_profissional: { icon: '×', label: 'Cancelado pelo profissional', shortLabel: 'Cancelado' },
@@ -5793,6 +5806,8 @@
                 'confirmado': 'Confirmado',
                 'chegou': 'Chegou',
                 'em_atendimento': 'Em atendimento',
+                'em_analise': 'Em analise',
+                'online': 'Online',
                 'faltou': 'Faltou',
                 'agendado': '📅 Agendado',
                 'finalizado': '✅ Finalizado',
@@ -5816,6 +5831,8 @@
                 'confirmado': 'bg-indigo-50 border-indigo-200',
                 'chegou': 'bg-emerald-50 border-emerald-200',
                 'em_atendimento': 'bg-teal-50 border-teal-200',
+                'em_analise': 'bg-violet-50 border-violet-200',
+                'online': 'bg-sky-50 border-sky-200',
                 'faltou': 'bg-yellow-50 border-yellow-200',
                 'agendado': 'bg-blue-50 border-blue-200',
                 'finalizado': 'bg-green-50 border-green-200',
@@ -6539,7 +6556,7 @@
             return level === 'viewer' && userOwnsAppointment(appointment);
         }
 
-        const PROFESSIONAL_STATUS_UPDATE_ALLOWED = new Set(['finalizado', 'cancelado_profissional', 'faltou']);
+        const PROFESSIONAL_STATUS_UPDATE_ALLOWED = new Set(['finalizado', 'cancelado_profissional', 'em_analise', 'online']);
 
         function userOwnsAppointment(appointment) {
             if (!currentUser || !appointment) return false;
@@ -7467,8 +7484,11 @@
                         <button type="button" class="w-full bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-sm font-medium" onclick="updateAppointmentStatus('${appointment.id}', 'cancelado_paciente')">
                             ❌ Cancelar (Paciente)
                         </button>
-                        <button type="button" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm font-medium" onclick="updateAppointmentStatus('${appointment.id}', 'faltou')">
-                            Faltou
+                        <button type="button" class="w-full bg-violet-600 hover:bg-violet-700 text-white px-3 py-2 rounded text-sm font-medium" onclick="updateAppointmentStatus('${appointment.id}', 'em_analise')">
+                            Em analise
+                        </button>
+                        <button type="button" class="w-full bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded text-sm font-medium" onclick="updateAppointmentStatus('${appointment.id}', 'online')">
+                            Online
                         </button>
                 `;
 
@@ -11107,7 +11127,7 @@
 
         function isAppointmentUsingRoom(appointment) {
             const status = normalizeScheduleStatus(appointment.status || 'agendado');
-            if (['cancelado_profissional', 'cancelado_paciente', 'faltou'].includes(status)) {
+            if (['cancelado_profissional', 'cancelado_paciente', 'faltou', 'online'].includes(status)) {
                 return false;
             }
             const type = appointment.type || appointment.tipo_atendimento || appointment.tipo || '';

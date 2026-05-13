@@ -1,7 +1,7 @@
 (function () {
     "use strict";
 
-    const PROFESSIONAL_STATUS_UPDATE_ALLOWED = new Set(["finalizado", "cancelado_profissional", "faltou"]);
+    const PROFESSIONAL_STATUS_UPDATE_ALLOWED = new Set(["finalizado", "cancelado_profissional", "em_analise", "online"]);
     const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:5000";
     const STATUS_LABELS = {
         agendado: "Agendado",
@@ -9,6 +9,8 @@
         confirmado: "Confirmado",
         chegou: "Chegou",
         em_atendimento: "Em atendimento",
+        em_analise: "Em analise",
+        online: "Online",
         finalizado: "Finalizado",
         cancelado_profissional: "Cancelado pelo profissional",
         cancelado_paciente: "Cancelado pelo paciente",
@@ -1256,6 +1258,11 @@
         const aliases = {
             "pre_atendimento": "pre_atendimento",
             "em_atendimento": "em_atendimento",
+            "em_analise": "em_analise",
+            "analise": "em_analise",
+            "online": "online",
+            "on_line": "online",
+            "remoto": "online",
             "cancelado_pelo_profissional": "cancelado_profissional",
             "cancelado_profissional": "cancelado_profissional",
             "cancelado_pelo_paciente": "cancelado_paciente",

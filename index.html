@@ -491,6 +491,14 @@
             background: #ccfbf1;
             color: #0f766e;
         }
+        .schedule-status-em_analise .schedule-appointment-status {
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+        .schedule-status-online .schedule-appointment-status {
+            background: #e0f2fe;
+            color: #0369a1;
+        }
         .schedule-status-cancelado_profissional .schedule-appointment-status,
         .schedule-status-cancelado_paciente .schedule-appointment-status {
             background: #fee2e2;
@@ -672,8 +680,9 @@
                             <option value="confirmado">Confirmado</option>
                             <option value="chegou">Chegou</option>
                             <option value="em_atendimento">Em atendimento</option>
+                            <option value="em_analise">Em analise</option>
+                            <option value="online">Online</option>
                             <option value="finalizado">Finalizado</option>
-                            <option value="faltou">Faltou</option>
                             <option value="cancelado_paciente">Cancelado paciente</option>
                             <option value="cancelado_profissional">Cancelado profissional</option>
                         </select>
@@ -808,8 +817,9 @@
                                 <option value="confirmado">Confirmado</option>
                                 <option value="chegou">Chegou</option>
                                 <option value="em_atendimento">Em atendimento</option>
+                                <option value="em_analise">Em analise</option>
+                                <option value="online">Online</option>
                                 <option value="finalizado">Finalizado</option>
-                                <option value="faltou">Faltou</option>
                                 <option value="cancelado_paciente">Cancelado paciente</option>
                                 <option value="cancelado_profissional">Cancelado profissional</option>
                             </select>
@@ -968,8 +978,9 @@
                                 <option value="confirmado">Confirmado</option>
                                 <option value="chegou">Chegou</option>
                                 <option value="em_atendimento">Em atendimento</option>
+                                <option value="em_analise">Em analise</option>
+                                <option value="online">Online</option>
                                 <option value="finalizado">Finalizado</option>
-                                <option value="faltou">Faltou</option>
                                 <option value="cancelado_paciente">Cancelado paciente</option>
                                 <option value="cancelado_profissional">Cancelado profissional</option>
                             </select>
@@ -1657,10 +1668,11 @@
                         <option value="confirmado">Confirmado</option>
                         <option value="chegou">Chegou</option>
                         <option value="em_atendimento">Em atendimento</option>
+                        <option value="em_analise">Em analise</option>
+                        <option value="online">Online</option>
                         <option value="finalizado">Finalizado</option>
                         <option value="cancelado_profissional">Cancelado (Profissional)</option>
                         <option value="cancelado_paciente">Cancelado (Paciente)</option>
-                        <option value="faltou">Faltou</option>
                     </select>
                 </div>
                 <div>
@@ -1676,10 +1688,11 @@
                         <option value="confirmado">Confirmado</option>
                         <option value="chegou">Chegou</option>
                         <option value="em_atendimento">Em atendimento</option>
+                        <option value="em_analise">Em analise</option>
+                        <option value="online">Online</option>
                         <option value="finalizado">Finalizado</option>
                         <option value="cancelado_profissional">Cancelado (Profissional)</option>
                         <option value="cancelado_paciente">Cancelado (Paciente)</option>
-                        <option value="faltou">Faltou</option>
                     </select>
                 </div>
             </div>
@@ -2516,7 +2529,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260511-home-clock"></script>
+    <script src="static/app.js?v=20260513-status"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();

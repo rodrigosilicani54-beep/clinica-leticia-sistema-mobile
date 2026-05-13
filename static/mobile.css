@@ -415,6 +415,16 @@ h3 {
     color: var(--accent);
 }
 
+.status-em_analise {
+    background: #f3e8ff;
+    color: #6d28d9;
+}
+
+.status-online {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
 .remark-status-aprovado {
     background: #e8f8ef;
     color: #146c43;

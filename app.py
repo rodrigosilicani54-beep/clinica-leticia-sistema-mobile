@@ -266,6 +266,8 @@ VALID_APPOINTMENT_STATUSES = {
     'confirmado',
     'chegou',
     'em_atendimento',
+    'em_analise',
+    'online',
     'finalizado',
     'cancelado_profissional',
     'cancelado_paciente',
@@ -311,7 +313,8 @@ PATIENT_ROOM_CONFLICT_IGNORED_STATUSES = {
     'cancelado_profissional',
     'cancelado_paciente',
     'faltou',
-    'nao_compareceu'
+    'nao_compareceu',
+    'online'
 }
 APPOINTMENT_STATUS_ALIASES = {
     'agendado': 'agendado',
@@ -331,6 +334,15 @@ APPOINTMENT_STATUS_ALIASES = {
     'em_atendimento': 'em_atendimento',
     'em atendimento': 'em_atendimento',
     'atendimento': 'em_atendimento',
+    'em_analise': 'em_analise',
+    'em analise': 'em_analise',
+    'em análise': 'em_analise',
+    'analise': 'em_analise',
+    'análise': 'em_analise',
+    'online': 'online',
+    'on-line': 'online',
+    'remoto': 'online',
+    'remota': 'online',
     'finalizado': 'finalizado',
     'finalizada': 'finalizado',
     'concluido': 'finalizado',
@@ -2268,7 +2280,7 @@ def user_can_manage_remarque_config(cur, user):
     return 'CEO' in text or 'ATAC' in text or 'FINANCEIRO' in text
 
 
-PROFESSIONAL_STATUS_UPDATE_ALLOWED = {'finalizado', 'cancelado_profissional', 'faltou'}
+PROFESSIONAL_STATUS_UPDATE_ALLOWED = {'finalizado', 'cancelado_profissional', 'em_analise', 'online'}
 
 
 def user_matches_appointment_professional(user_profissional_id, current_data):
@@ -6547,7 +6559,8 @@ def atualizar_agendamento(agendamento_id):
                 and cancelado_por_username
                 and cancelado_por_username != current_username
             )
-            if is_locked_by_other and novo_status != current_status:
+            allowed_after_reception_cancel = novo_status in {'em_analise', 'online'}
+            if is_locked_by_other and novo_status != current_status and not allowed_after_reception_cancel:
                 cur.close()
                 conn.close()
                 return jsonify({
