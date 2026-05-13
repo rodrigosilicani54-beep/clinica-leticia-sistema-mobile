@@ -17,7 +17,7 @@ from pathlib import Path
 import json
 import io
 import socket
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from time import monotonic
 
 try:
@@ -1934,6 +1934,20 @@ def serialize_audit_value(value):
     return value
 
 
+def serialize_audit_timestamp(value):
+    if value is None:
+        return None
+    if not hasattr(value, 'isoformat'):
+        return value
+
+    if getattr(value, 'tzinfo', None) is not None and value.utcoffset() is not None:
+        return value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    # PostgreSQL stores these audit columns as TIMESTAMP without timezone.
+    # On Render/Supabase the value is UTC, so mark it explicitly for the browser.
+    return value.isoformat() + 'Z'
+
+
 def normalize_audit_payload(value):
     if value is None:
         return None
@@ -2904,8 +2918,7 @@ def serialize_audit_log_row(row, column_names):
     item = dict(zip(column_names, row))
     for key in ('dados_antes', 'dados_depois', 'detalhes'):
         item[key] = normalize_audit_payload(item.get(key))
-    if item.get('criado_em') is not None and hasattr(item['criado_em'], 'isoformat'):
-        item['criado_em'] = item['criado_em'].isoformat()
+    item['criado_em'] = serialize_audit_timestamp(item.get('criado_em'))
     return item
 
 
@@ -6286,7 +6299,7 @@ def listar_agendamento_auditoria(agendamento_id):
                 'usuario_nome': row[4],
                 'usuario_username': row[5],
                 'detalhes': detalhes,
-                'criado_em': row[7].isoformat() if hasattr(row[7], 'isoformat') else row[7]
+                'criado_em': serialize_audit_timestamp(row[7])
             })
         conn.commit()
         cur.close()
