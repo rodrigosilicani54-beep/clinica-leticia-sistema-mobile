@@ -1339,14 +1339,14 @@
         function showWelcomeMessage() {
             const levelIcons = {
                 admin: '👑',
-                editor: '✏️',
-                viewer: '👁️'
+                editor: 'S',
+                viewer: 'P'
             };
             
             const levelNames = {
                 admin: 'Administrador',
-                editor: 'Editor',
-                viewer: 'Visualizador'
+                editor: 'Supervisor / ATM',
+                viewer: 'Profissional'
             };
             
             const message = `${levelIcons[currentUser.level]} Bem-vindo, ${currentUser.name}!\nNível: ${levelNames[currentUser.level]}`;
@@ -1804,14 +1804,14 @@
 
             const levelInitials = {
                 admin: 'A',
-                editor: 'E',
-                viewer: 'V'
+                editor: 'S',
+                viewer: 'P'
             };
 
             const levelNames = {
                 admin: 'Administrador',
-                editor: 'Editor',
-                viewer: 'Visualizador'
+                editor: 'Supervisor / ATM',
+                viewer: 'Profissional'
             };
 
             const levelColors = {
@@ -2375,11 +2375,11 @@
                 </div>
                 <div class="bg-white p-3 rounded border">
                     <div class="text-2xl font-bold text-blue-600">${editorCount}</div>
-                    <div class="text-sm text-gray-600">✏️ Editores</div>
+                    <div class="text-sm text-gray-600">Supervisores / ATM</div>
                 </div>
                 <div class="bg-white p-3 rounded border">
                     <div class="text-2xl font-bold text-green-600">${viewerCount}</div>
-                    <div class="text-sm text-gray-600">👁️ Visualizadores</div>
+                    <div class="text-sm text-gray-600">Profissionais</div>
                 </div>
             `;
         }
@@ -2714,8 +2714,8 @@
         function getLevelIcon(level) {
             const icons = {
                 admin: '👑',
-                editor: '✏️',
-                viewer: '👁️'
+                editor: 'S',
+                viewer: 'P'
             };
             return icons[level] || '❓';
         }
@@ -2723,8 +2723,8 @@
         function getLevelLabel(level) {
             const labels = {
                 admin: 'Administrador',
-                editor: 'Editor',
-                viewer: 'Visualizador'
+                editor: 'Supervisor / ATM',
+                viewer: 'Profissional'
             };
             return labels[level] || 'Desconhecido';
         }
@@ -2817,8 +2817,8 @@
             
             const levelNames = {
                 admin: 'Administrador',
-                editor: 'Editor',
-                viewer: 'Visualizador'
+                editor: 'Supervisor / ATM',
+                viewer: 'Profissional'
             };
             
             alert(`🚫 ACESSO NEGADO\n\nVocê não tem permissão para ${actionNames[action]}.\n\nSeu nível atual: ${levelNames[currentUser.level]}\n\nContate um administrador se precisar de mais permissões.`);
@@ -2869,7 +2869,7 @@
             if (!canManageWaitlist()) {
                 if (createButton) createButton.classList.add('hidden');
                 if (accessNote) {
-                    accessNote.textContent = 'Lista de espera disponivel para Administrador, Editor, ATAC, Recepcao e CEO.';
+                    accessNote.textContent = 'Lista de espera disponivel para Administrador, Supervisor / ATM, ATAC, Recepcao e CEO.';
                     accessNote.classList.remove('hidden');
                 }
                 renderWaitlist();
@@ -7192,7 +7192,7 @@
             if (auditContent) {
                 auditContent.innerHTML = canAudit
                     ? '<div class="text-gray-500">Abra a aba Historico para carregar as alteracoes.</div>'
-                    : '<div class="text-gray-500">Historico disponivel para administradores, editores e profissionais vinculados ao proprio agendamento.</div>';
+                    : '<div class="text-gray-500">Historico disponivel para administradores, supervisores / ATM e profissionais vinculados ao proprio agendamento.</div>';
             }
         }
 

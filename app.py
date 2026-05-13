@@ -200,7 +200,14 @@ def normalize_level(level):
         'admin': 'admin',
         'editor': 'editor',
         'edit': 'editor',
+        'supervisor': 'editor',
+        'supervisor/atm': 'editor',
+        'supervisor / atm': 'editor',
+        'atm': 'editor',
         'visualizador': 'viewer',
+        'profissional': 'viewer',
+        'profissional da clinica': 'viewer',
+        'profissional da clínica': 'viewer',
         'viewer': 'viewer',
         'visual': 'viewer'
     }

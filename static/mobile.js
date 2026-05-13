@@ -1461,7 +1461,7 @@
     function getRoleLabel(level) {
         const labels = {
             admin: "Administrador",
-            editor: "Editor",
+            editor: "Supervisor / ATM",
             viewer: "Profissional"
         };
         return labels[level] || level || "Usuario";

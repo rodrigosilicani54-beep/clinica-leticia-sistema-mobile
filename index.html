@@ -2194,8 +2194,8 @@
                         <select id="newUserLevel" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500">
                             <option value="">Selecione o nível...</option>
                             <option value="admin">👑 Administrador (Acesso Total)</option>
-                            <option value="editor">✏️ Editor (Criar e Editar)</option>
-                            <option value="viewer">👁️ Visualizador (Apenas Ver)</option>
+                            <option value="editor">Supervisor / ATM (Operacao da agenda)</option>
+                            <option value="viewer">Profissional (Propria agenda e status)</option>
                         </select>
                     </div>
 
@@ -2247,8 +2247,8 @@
                             <select id="userLevelFilter" onchange="filterUsers()" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500">
                                 <option value="">Todos os níveis</option>
                                 <option value="admin">👑 Administradores</option>
-                                <option value="editor">✏️ Editores</option>
-                                <option value="viewer">👁️ Visualizadores</option>
+                                <option value="editor">Supervisores / ATM</option>
+                                <option value="viewer">Profissionais</option>
                             </select>
                         </div>
                         <div class="flex items-end">
@@ -2314,8 +2314,8 @@
                     <label class="block text-sm font-medium mb-2">🏆 Nível de Acesso:</label>
                     <select id="editUserLevel" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
                         <option value="admin">👑 Administrador (Acesso Total)</option>
-                        <option value="editor">✏️ Editor (Criar e Editar)</option>
-                        <option value="viewer">👁️ Visualizador (Apenas Ver)</option>
+                        <option value="editor">Supervisor / ATM (Operacao da agenda)</option>
+                        <option value="viewer">Profissional (Propria agenda e status)</option>
                     </select>
                 </div>
 
@@ -2412,8 +2412,8 @@
                     <h4 class="font-bold text-gray-800 mb-2">📋 Níveis de Acesso:</h4>
                     <div class="text-sm text-gray-600 space-y-1">
                         <div><strong>👑 Administrador:</strong> Acesso total + exclusões</div>
-                        <div><strong>✏️ Editor:</strong> Criar e editar (sem excluir)</div>
-                        <div><strong>👁️ Visualizador:</strong> Apenas visualizar</div>
+                        <div><strong>Supervisor / ATM:</strong> Operacao da agenda e cadastros permitidos</div>
+                        <div><strong>Profissional:</strong> Propria agenda e alteracao de status</div>
                     </div>
                 </div>
                 
@@ -2529,7 +2529,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260513-status"></script>
+    <script src="static/app.js?v=20260513-niveis"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
