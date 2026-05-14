@@ -744,8 +744,30 @@ REMOVED_SALAS = [
 
 SALAS_SCHEMA_READY = False
 SALAS_SCHEMA_LOCK = threading.Lock()
+AGENDAMENTO_SALA_NULLABLE_READY = False
+AGENDAMENTO_SALA_NULLABLE_LOCK = threading.Lock()
 AGENDAMENTO_LINKS_SCHEMA_READY = False
 AGENDAMENTO_LINKS_SCHEMA_LOCK = threading.Lock()
+
+
+def ensure_agendamento_sala_nullable(cur, appointment_cols=None):
+    global AGENDAMENTO_SALA_NULLABLE_READY
+
+    if appointment_cols is None:
+        appointment_cols = get_table_columns_cached(cur, 'agendamentos')
+    if 'sala_id' not in appointment_cols:
+        cur.execute("ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS sala_id INTEGER")
+        appointment_cols.add('sala_id')
+
+    if AGENDAMENTO_SALA_NULLABLE_READY:
+        return appointment_cols
+
+    with AGENDAMENTO_SALA_NULLABLE_LOCK:
+        if not AGENDAMENTO_SALA_NULLABLE_READY:
+            cur.execute("ALTER TABLE agendamentos ALTER COLUMN sala_id DROP NOT NULL")
+            AGENDAMENTO_SALA_NULLABLE_READY = True
+
+    return appointment_cols
 
 
 def normalize_room_id(value):
@@ -806,9 +828,7 @@ def ensure_salas_schema(cur, appointment_cols=None):
 
         if appointment_cols is None:
             appointment_cols = get_table_columns_cached(cur, 'agendamentos')
-        if 'sala_id' not in appointment_cols:
-            cur.execute("ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS sala_id INTEGER")
-            appointment_cols.add('sala_id')
+        appointment_cols = ensure_agendamento_sala_nullable(cur, appointment_cols)
 
         cur.connection.commit()
         SALAS_SCHEMA_READY = True
@@ -897,7 +917,9 @@ def migrate_existing_agendamento_links(cur, delete_invalid=False, enforce_constr
                 LEFT JOIN profissionais pr ON pr.id = a.profissional_id
                 LEFT JOIN pacientes pa ON pa.id = a.paciente_id
                 LEFT JOIN salas s ON s.id = a.sala_id
-                WHERE pr.id IS NULL OR pa.id IS NULL OR s.id IS NULL
+                WHERE pr.id IS NULL
+                   OR pa.id IS NULL
+                   OR (a.sala_id IS NOT NULL AND s.id IS NULL)
                 """
             )
             cur.execute(
@@ -942,17 +964,16 @@ def migrate_existing_agendamento_links(cur, delete_invalid=False, enforce_constr
                 LEFT JOIN salas s ON s.id = a.sala_id
                 WHERE a.profissional_id IS NULL
                    OR a.paciente_id IS NULL
-                   OR a.sala_id IS NULL
                    OR pr.id IS NULL
                    OR pa.id IS NULL
-                   OR s.id IS NULL
+                   OR (a.sala_id IS NOT NULL AND s.id IS NULL)
                 """
             )
             invalid_count = cur.fetchone()[0] or 0
             if invalid_count == 0:
                 cur.execute("ALTER TABLE agendamentos ALTER COLUMN profissional_id SET NOT NULL")
                 cur.execute("ALTER TABLE agendamentos ALTER COLUMN paciente_id SET NOT NULL")
-                cur.execute("ALTER TABLE agendamentos ALTER COLUMN sala_id SET NOT NULL")
+                cur.execute("ALTER TABLE agendamentos ALTER COLUMN sala_id DROP NOT NULL")
                 add_constraint_if_missing(
                     cur,
                     'fk_agendamentos_profissional_id',
