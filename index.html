@@ -208,14 +208,23 @@
             list-style: none;
             cursor: pointer;
             user-select: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
         .action-folder > summary::-webkit-details-marker {
             display: none;
         }
         .action-folder > summary::after {
-            content: " v";
-            color: #6b7280;
-            font-weight: 800;
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-right: 2px solid currentColor;
+            border-bottom: 2px solid currentColor;
+            transform: rotate(45deg);
+            margin-top: -4px;
+            opacity: 0.7;
+            flex: 0 0 auto;
         }
         .action-folder[open] > summary {
             background: #eef2ff;
@@ -223,7 +232,8 @@
             color: #3730a3;
         }
         .action-folder[open] > summary::after {
-            content: " ^";
+            transform: rotate(225deg);
+            margin-top: 4px;
         }
         .action-menu {
             position: absolute;
@@ -321,8 +331,9 @@
             grid-auto-rows: 24px;
             gap: 0;
             background: #ffffff;
-            max-height: 65vh;
-            overflow-y: auto;
+            max-height: none;
+            overflow-x: auto;
+            overflow-y: visible;
             border: 1px solid #e5e7eb;
             border-radius: 8px;
         }
@@ -2534,7 +2545,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260514-supervisor-status"></script>
+    <script src="static/app.js?v=20260514-agenda-scroll-arrow"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
