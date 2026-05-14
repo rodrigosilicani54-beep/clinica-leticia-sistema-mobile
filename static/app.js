@@ -4925,6 +4925,63 @@
             populateAgendaRoomFilters();
         }
 
+        function getAppointmentAttendanceMode() {
+            const checked = document.querySelector('input[name="appointmentAttendanceMode"]:checked');
+            return checked && checked.value === 'online' ? 'online' : 'presencial';
+        }
+
+        function setAppointmentAttendanceMode(mode) {
+            const normalizedMode = mode === 'online' ? 'online' : 'presencial';
+            document.querySelectorAll('input[name="appointmentAttendanceMode"]').forEach(input => {
+                input.checked = input.value === normalizedMode;
+            });
+            updateAppointmentAttendanceModeUI();
+        }
+
+        function setAppointmentAttendanceModeDisabled(disabled) {
+            document.querySelectorAll('input[name="appointmentAttendanceMode"]').forEach(input => {
+                input.disabled = !!disabled;
+            });
+        }
+
+        function updateAppointmentAttendanceModeUI() {
+            const mode = getAppointmentAttendanceMode();
+            const roomSelect = document.getElementById('appointmentRoom');
+            const roomWrapper = document.getElementById('appointmentRoomWrapper');
+            const requiredMark = document.getElementById('appointmentRoomRequiredMark');
+            const modeHint = document.getElementById('appointmentAttendanceModeHint');
+
+            document.querySelectorAll('input[name="appointmentAttendanceMode"]').forEach(input => {
+                const box = input.closest('label');
+                if (!box) return;
+                const selected = input.checked;
+                box.classList.toggle('border-blue-500', selected);
+                box.classList.toggle('bg-blue-50', selected);
+                box.classList.toggle('text-blue-900', selected);
+            });
+
+            if (mode === 'online') {
+                if (roomSelect) {
+                    roomSelect.value = '';
+                    roomSelect.required = false;
+                    roomSelect.disabled = true;
+                }
+                if (roomWrapper) roomWrapper.classList.add('opacity-70');
+                if (requiredMark) requiredMark.classList.add('hidden');
+                if (modeHint) modeHint.textContent = 'Online nao precisa de sala.';
+            } else {
+                if (roomSelect) {
+                    roomSelect.required = true;
+                    roomSelect.disabled = false;
+                }
+                if (roomWrapper) roomWrapper.classList.remove('opacity-70');
+                if (requiredMark) requiredMark.classList.remove('hidden');
+                if (modeHint) modeHint.textContent = 'Presencial precisa de sala.';
+            }
+
+            updateRoomAvailabilityHint();
+        }
+
         function getRoomsAvailabilityWeekDays() {
             return getWeekDays(roomsAvailabilityWeek).slice(1, 7);
         }
@@ -6142,6 +6199,7 @@
                 'time',
                 'endTime',
                 'type',
+                'status',
                 'quantidade_sessoes'
             ];
             return comparableFields.some(field => String(previousAppointment[field] ?? '') !== String(nextAppointment[field] ?? ''));
@@ -6228,7 +6286,10 @@
                     clientName: nextAppointment.clientName,
                     type: nextAppointment.type,
                     observations: scope === 'single' ? nextAppointment.observations : item.observations,
-                    status: item.status || nextAppointment.status || 'agendado',
+                    status: nextAppointment.status || item.status || 'agendado',
+                    recurrenceGroupId: nextAppointment.recurrenceGroupId || item.recurrenceGroupId || '',
+                    recurrenceIndex: nextAppointment.recurrenceIndex ?? item.recurrenceIndex ?? null,
+                    recurrenceTotal: nextAppointment.recurrenceTotal ?? item.recurrenceTotal ?? null,
                     lastAction: nextAppointment.lastAction
                 };
             });
@@ -6378,8 +6439,13 @@
             populateEndTimeOptions(appointment.time, document.getElementById('appointmentEndInput').value);
             updateSessionCountDisplay(appointment.time, document.getElementById('appointmentEndInput').value);
             document.getElementById('appointmentProfessional').value = appointment.professionalId;
-            populateRoomSelect(appointment.roomId || appointment.sala_id || '');
-            document.getElementById('appointmentRoom').value = appointment.roomId || appointment.sala_id || '';
+            const appointmentRoomId = appointment.roomId || appointment.sala_id || '';
+            populateRoomSelect(appointmentRoomId);
+            document.getElementById('appointmentRoom').value = appointmentRoomId;
+            const appointmentMode = normalizeScheduleStatus(appointment.status || 'agendado') === 'online' || !appointmentRoomId
+                ? 'online'
+                : 'presencial';
+            setAppointmentAttendanceMode(appointmentMode);
             updateRoomAvailabilityHint(appointment.id);
             document.getElementById('clientName').value = appointment.clientName;
             const patientHidden = document.getElementById('clientPatientId');
@@ -6391,7 +6457,8 @@
             }
             document.getElementById('appointmentType').value = appointment.type;
             document.getElementById('observations').value = appointment.observations || '';
-            setRepeatControlsVisible(false);
+            resetRepeatControls();
+            setRepeatControlsVisible(canEditScheduleData && !getAppointmentRecurrenceGroupId(appointment));
 
             const submitButton = document.querySelector('#scheduleModal button[type="submit"]');
             const appointmentProfessionalSelect = document.getElementById('appointmentProfessional');
@@ -6413,6 +6480,7 @@
                 clientNameInput.disabled = true;
                 appointmentTypeSelect.disabled = true;
                 observationsInput.disabled = true;
+                setAppointmentAttendanceModeDisabled(true);
                 document.getElementById('deleteAppointmentBtn').style.display = 'none';
             } else {
                 submitButton.style.display = 'block';
@@ -6424,6 +6492,8 @@
                 clientNameInput.disabled = false;
                 appointmentTypeSelect.disabled = false;
                 observationsInput.disabled = false;
+                setAppointmentAttendanceModeDisabled(false);
+                updateAppointmentAttendanceModeUI();
                 document.getElementById('deleteAppointmentBtn').style.display = userPermissions.canDelete ? 'block' : 'none';
             }
             
@@ -7891,6 +7961,7 @@
                 hora_inicio: appointment.time,
                 hora_fim: appointment.endTime || appointment.time,
                 quantidade_sessoes: appointment.quantidade_sessoes,
+                status: appointment.status,
                 recorrencia_grupo_id: recurrenceGroupId,
                 recorrencia_indice: appointment.recurrenceIndex,
                 recorrencia_total: appointment.recurrenceTotal,
@@ -7969,6 +8040,222 @@
             });
         }
 
+        async function saveRepeatFromEditedAppointment(baseAppointment, existingAppointment) {
+            if (!existingAppointment || getAppointmentRecurrenceGroupId(existingAppointment)) {
+                alert('Este agendamento ja pertence a uma repeticao.');
+                setAppointmentSavingState(false);
+                return;
+            }
+
+            const numericId = Number(existingAppointment.id);
+            if (Number.isNaN(numericId) || numericId <= 0) {
+                alert('Atualize a agenda antes de criar repeticoes para este agendamento.');
+                setAppointmentSavingState(false);
+                return;
+            }
+
+            const selectedDays = getSelectedRepeatDays();
+            const repeatCount = getRepeatCount();
+            if (!selectedDays.length || repeatCount < 2) {
+                alert('Para editar e criar repeticao, selecione os dias e uma quantidade maior que 1.');
+                setAppointmentSavingState(false);
+                return;
+            }
+
+            const repeatDates = generateRepeatDates(baseAppointment.date, selectedDays, repeatCount);
+            if (!repeatDates.includes(baseAppointment.date)) {
+                alert('Inclua o dia da semana da data selecionada para transformar este agendamento em repeticao.');
+                setAppointmentSavingState(false);
+                return;
+            }
+
+            const excludeIds = [String(existingAppointment.id)];
+            const availableDates = [];
+            const conflicts = [];
+            repeatDates.forEach(date => {
+                const conflict = findAppointmentTimeConflict(
+                    baseAppointment.professionalId,
+                    date,
+                    baseAppointment.time,
+                    baseAppointment.endTime || baseAppointment.time,
+                    excludeIds
+                );
+                if (conflict) {
+                    conflicts.push({ date, conflict });
+                } else {
+                    availableDates.push(date);
+                }
+            });
+
+            const patientRoomConflicts = [];
+            const safeDates = availableDates.filter(date => {
+                const conflict = findPatientRoomTimeConflict({ ...baseAppointment, date }, excludeIds);
+                if (conflict) {
+                    patientRoomConflicts.push({ date, conflict });
+                    return false;
+                }
+                return true;
+            });
+
+            const baseDateIndex = safeDates.indexOf(baseAppointment.date);
+            if (baseDateIndex < 0 || safeDates.length < 2) {
+                alert('Nao foi possivel criar repeticao sem conflito mantendo o agendamento atual.');
+                setAppointmentSavingState(false);
+                return;
+            }
+
+            if (conflicts.length || patientRoomConflicts.length) {
+                const conflictLines = [
+                    ...conflicts.slice(0, 5).map(item => `${formatDateBR(item.date)} - conflito com ${item.conflict.clientName || 'Paciente'}`),
+                    ...patientRoomConflicts.slice(0, 5).map(item => `${formatDateBR(item.date)} - ${describePatientRoomConflict(item.conflict)}`)
+                ].join('\n');
+                if (!confirm(`Algumas repeticoes possuem conflito e serao ignoradas:\n\n${conflictLines}\n\nCriar as ${safeDates.length} repeticoes sem conflito?`)) {
+                    setAppointmentSavingState(false);
+                    return;
+                }
+            } else {
+                const firstDate = formatDateBR(safeDates[0]);
+                const lastDate = formatDateBR(safeDates[safeDates.length - 1]);
+                if (!confirm(`Transformar este agendamento em uma repeticao com ${safeDates.length} agendamento(s)?\n\nPeriodo: ${firstDate} ate ${lastDate}`)) {
+                    setAppointmentSavingState(false);
+                    return;
+                }
+            }
+
+            if (baseAppointment.roomId && isAppointmentUsingRoom(baseAppointment)) {
+                const roomConflicts = safeDates
+                    .map(date => ({
+                        date,
+                        conflict: findRoomTimeConflict(
+                            baseAppointment.roomId,
+                            date,
+                            baseAppointment.time,
+                            baseAppointment.endTime || baseAppointment.time,
+                            excludeIds
+                        )
+                    }))
+                    .filter(item => item.conflict);
+                if (roomConflicts.length) {
+                    const roomName = getRoomName(baseAppointment.roomId) || 'Selecionada';
+                    const preview = roomConflicts.slice(0, 8).map(item => `${formatDateBR(item.date)} - ${describeRoomConflict(item.conflict)}`).join('\n');
+                    if (!confirm(`Sala ocupada: ${roomName}\n\n${preview}\n\nDeseja criar mesmo assim e juntar profissionais nesta sala?`)) {
+                        setAppointmentSavingState(false);
+                        return;
+                    }
+                }
+            }
+
+            const recurrenceGroupId = createRecurrenceGroupId();
+            const recurrenceTotal = safeDates.length;
+            const createdBy = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
+            const headers = { 'Content-Type': 'application/json' };
+            if (currentUser && currentUser.username && currentUser.password) {
+                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
+            }
+
+            const baseRecurrenceIndex = baseDateIndex + 1;
+            const updatePayload = {
+                profissional: baseAppointment.professionalId,
+                profissional_id: baseAppointment.professionalId,
+                sala_id: baseAppointment.roomId || null,
+                paciente: baseAppointment.clientName,
+                paciente_id: baseAppointment.patientId,
+                tipo_atendimento: baseAppointment.type,
+                data: baseAppointment.date,
+                hora_inicio: baseAppointment.time,
+                hora_fim: baseAppointment.endTime || baseAppointment.time,
+                quantidade_sessoes: baseAppointment.quantidade_sessoes,
+                recorrencia_grupo_id: recurrenceGroupId,
+                recorrencia_indice: baseRecurrenceIndex,
+                recorrencia_total: recurrenceTotal,
+                ultima_acao: createdBy,
+                usuario_username: currentUser ? currentUser.username : null
+            };
+            if (normalizeScheduleStatus(existingAppointment.status || 'agendado') !== baseAppointment.status) {
+                updatePayload.status = baseAppointment.status;
+            }
+
+            try {
+                const updateResponse = await fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify(updatePayload)
+                });
+                const updateData = await updateResponse.json();
+                if (!updateData || !updateData.success) {
+                    throw new Error(updateData?.error || 'Nao foi possivel atualizar o agendamento original.');
+                }
+
+                const newDates = safeDates.filter(date => date !== baseAppointment.date);
+                const recurringPayloads = newDates.map(date => ({
+                    profissional: baseAppointment.professionalId,
+                    profissional_id: baseAppointment.professionalId,
+                    sala_id: baseAppointment.roomId || null,
+                    paciente: baseAppointment.clientName,
+                    paciente_id: baseAppointment.patientId,
+                    tipo_atendimento: baseAppointment.type,
+                    data: date,
+                    hora_inicio: baseAppointment.time,
+                    hora_fim: baseAppointment.endTime || baseAppointment.time,
+                    quantidade_sessoes: baseAppointment.quantidade_sessoes,
+                    status: baseAppointment.status,
+                    recorrencia_grupo_id: recurrenceGroupId,
+                    recorrencia_indice: safeDates.indexOf(date) + 1,
+                    recorrencia_total: recurrenceTotal,
+                    created_by: createdBy,
+                    usuario_username: currentUser ? currentUser.username : null
+                }));
+
+                let createdAppointments = [];
+                if (recurringPayloads.length) {
+                    const batchResponse = await fetch('http://127.0.0.1:5000/api/agendamentos/batch', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            agendamentos: recurringPayloads,
+                            created_by: createdBy,
+                            usuario_username: currentUser ? currentUser.username : null
+                        })
+                    });
+                    const batchData = await batchResponse.json();
+                    if (!batchData || !batchData.success || !Array.isArray(batchData.agendamentos)) {
+                        throw new Error(batchData?.error || 'Nao foi possivel criar as novas repeticoes.');
+                    }
+                    createdAppointments = batchData.agendamentos;
+                }
+
+                applyAppointmentEditToLoadedTargets({
+                    ...baseAppointment,
+                    recurrenceGroupId,
+                    recurrenceIndex: baseRecurrenceIndex,
+                    recurrenceTotal
+                }, [baseAppointment.id], 'single');
+
+                createdAppointments.forEach(srv => {
+                    const fallback = {
+                        ...baseAppointment,
+                        date: normalizeDate(srv.data),
+                        recurrenceGroupId,
+                        recurrenceIndex: srv.recorrencia_indice,
+                        recurrenceTotal
+                    };
+                    upsertConfirmedAppointment(buildLocalAppointmentFromServer(srv, fallback));
+                });
+                localStorage.setItem('appointments', JSON.stringify(appointments));
+                refreshActiveScheduleViews();
+                closeModal('scheduleModal');
+                setAppointmentSavingState(false);
+                syncAppointmentsForAgendaView({ force: true }).catch(err => {
+                    console.warn('Nao foi possivel sincronizar agenda apos criar repeticao na edicao:', err);
+                });
+                showSuccessMessage(`Repeticao criada com ${recurrenceTotal} agendamento(s).`);
+            } catch (err) {
+                console.error('Erro ao criar repeticao a partir da edicao:', err);
+                setAppointmentSavingState(false);
+                alert(`Nao foi possivel criar a repeticao. ${err.message || ''}`);
+            }
+        }
+
         async function saveAppointment(event) {
             event.preventDefault();
             if (isSavingAppointment) {
@@ -7997,11 +8284,15 @@
             const newEndTime = document.getElementById('appointmentEndInput').value;
             const newProfessionalId = document.getElementById('appointmentProfessional').value;
             const newRoomId = document.getElementById('appointmentRoom').value;
+            const attendanceMode = getAppointmentAttendanceMode();
             const patientHiddenElement = document.getElementById('clientPatientId');
             const previousPatientId = patientHiddenElement?.value || '';
             const selectedPatient = syncSelectedPatientFromName();
             const newPatientId = patientHiddenElement?.value || previousPatientId || '';
             const quantidade_sessoes = calcularSessoes(newTime, newEndTime);
+            const existingAppointmentForSave = isEditing
+                ? appointments.find(a => String(a.id) === String(appointmentId))
+                : null;
 
             // Validate date
             if (!newDate || newDate === '') {
@@ -8040,7 +8331,7 @@
                 return;
             }
 
-            if (!newRoomId) {
+            if (attendanceMode === 'presencial' && !newRoomId) {
                 alert('Por favor, selecione uma sala para este agendamento.');
                 setAppointmentSavingState(false);
                 return;
@@ -8082,11 +8373,16 @@
                 }
             }
 
+            const previousStatus = normalizeScheduleStatus(existingAppointmentForSave?.status || 'agendado');
+            const appointmentStatus = attendanceMode === 'online'
+                ? 'online'
+                : (previousStatus === 'online' ? 'agendado' : previousStatus);
+
             const appointment = {
                 id: appointmentId || Date.now().toString(),
                 professionalId: newProfessionalId,
                 patientId: newPatientId,
-                roomId: newRoomId,
+                roomId: attendanceMode === 'online' ? '' : newRoomId,
                 date: newDate,
                 time: newTime,
                 endTime: newEndTime,
@@ -8094,7 +8390,7 @@
                 clientName: (selectedPatient?.nome || selectedPatient?.name || document.getElementById('clientName').value || '').trim(),
                 type: document.getElementById('appointmentType').value,
                 observations: document.getElementById('observations').value,
-                status: 'agendado',
+                status: appointmentStatus,
                 lastAction: {
                     user: currentUser ? currentUser.name : 'Usuário',
                     timestamp: new Date().toISOString(),
@@ -8104,7 +8400,11 @@
 
             let editRecurrenceScope = 'single';
             let editRecurrenceTargetIds = appointmentId ? [appointmentId] : [];
-            const existingAppointmentForScope = appointmentId ? appointments.find(a => String(a.id) === String(appointmentId)) : null;
+            const existingAppointmentForScope = existingAppointmentForSave;
+            if (isEditing && isRepeatEnabled()) {
+                await saveRepeatFromEditedAppointment(appointment, existingAppointmentForScope);
+                return;
+            }
             if (isEditing && hasRepeatableAppointmentChanges(existingAppointmentForScope, appointment)) {
                 const scopeChoice = await chooseRecurringAppointmentScope(existingAppointmentForScope, 'Salvar nas', false);
                 if (!scopeChoice) {
@@ -8151,9 +8451,8 @@
                     debugLog('[saveAppointment] NEW: date=' + newDate + ', time=' + newTime + ', prof=' + newProfessionalId);
                 }
                 
-                // Preserve status and lastAction from existing appointment
+                // Preserve lastAction from existing appointment
                 if (existingAppointment) {
-                    appointment.status = existingAppointment.status || 'agendado';
                     appointment.lastAction = existingAppointment.lastAction || appointment.lastAction;
                 }
                 
@@ -8167,24 +8466,29 @@
                         headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
                     }
 
+                    const editPayload = {
+                        profissional: appointment.professionalId,
+                        profissional_id: appointment.professionalId,
+                        sala_id: appointment.roomId || null,
+                        paciente: appointment.clientName,
+                        paciente_id: appointment.patientId,
+                        tipo_atendimento: appointment.type,
+                        data: appointment.date,
+                        hora_inicio: appointment.time,
+                        hora_fim: appointment.endTime || appointment.time,
+                        quantidade_sessoes: appointment.quantidade_sessoes,
+                        recurrence_scope: editRecurrenceScope,
+                        ultima_acao: currentUser ? (currentUser.name || currentUser.username) : 'Sistema',
+                        usuario_username: currentUser ? currentUser.username : null
+                    };
+                    if (existingAppointment && normalizeScheduleStatus(existingAppointment.status || 'agendado') !== appointment.status) {
+                        editPayload.status = appointment.status;
+                    }
+
                     fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
                         method: 'PUT',
                         headers,
-                        body: JSON.stringify({
-                            profissional: appointment.professionalId,
-                            profissional_id: appointment.professionalId,
-                            sala_id: appointment.roomId || null,
-                            paciente: appointment.clientName,
-                            paciente_id: appointment.patientId,
-                            tipo_atendimento: appointment.type,
-                            data: appointment.date,
-                            hora_inicio: appointment.time,
-                            hora_fim: appointment.endTime || appointment.time,
-                            quantidade_sessoes: appointment.quantidade_sessoes,
-                            recurrence_scope: editRecurrenceScope,
-                            ultima_acao: currentUser ? (currentUser.name || currentUser.username) : 'Sistema',
-                            usuario_username: currentUser ? currentUser.username : null
-                        })
+                        body: JSON.stringify(editPayload)
                     })
                     .then(res => res.json())
                     .then(data => {
@@ -8296,6 +8600,7 @@
                     hora_inicio: appointment.time,
                     hora_fim: appointment.endTime || appointment.time,
                     quantidade_sessoes: appointment.quantidade_sessoes,
+                    status: appointment.status,
                     created_by: currentUser ? (currentUser.name || currentUser.username) : 'Sistema',
                     usuario_username: currentUser ? currentUser.username : null
                 })
@@ -8317,6 +8622,7 @@
                         clientName: srv.paciente || appointment.clientName,
                         type: srv.tipo_atendimento || appointment.type,
                         observations: appointment.observations || '',
+                        status: normalizeScheduleStatus(srv.status || appointment.status || 'agendado'),
                         createdBy: srv.created_by || srv.criado_por || (currentUser ? (currentUser.name || currentUser.username) : 'Sistema'),
                         createdAt: srv.criado_em || new Date().toISOString()
                     };
@@ -8548,6 +8854,8 @@
             document.getElementById('appointmentTimeInput').disabled = false;
             document.getElementById('appointmentEndInput').disabled = false;
             document.getElementById('observations').disabled = false;
+            setAppointmentAttendanceModeDisabled(false);
+            updateAppointmentAttendanceModeUI();
             
             // Add visual indicator that this is an editable imported appointment
             // Add badge to show this was imported
@@ -8609,7 +8917,8 @@
             document.getElementById('appointmentSessionCount').textContent = '0 sessões';
             document.getElementById('appointmentProfessional').value = '';
             document.getElementById('appointmentRoom').value = '';
-            updateRoomAvailabilityHint();
+            setAppointmentAttendanceModeDisabled(false);
+            setAppointmentAttendanceMode('presencial');
             document.getElementById('clientName').value = '';
             const patientHidden = document.getElementById('clientPatientId');
             if (patientHidden) patientHidden.value = '';
@@ -11239,6 +11548,12 @@
             const appointmentId = excludeAppointmentId || document.getElementById('appointmentId')?.value || '';
 
             hint.className = 'text-xs text-gray-500 mt-1';
+
+            if (getAppointmentAttendanceMode() === 'online') {
+                hint.className = 'text-xs text-green-600 mt-1 font-medium';
+                hint.textContent = 'Atendimento online nao ocupa sala.';
+                return;
+            }
 
             if (!roomId) {
                 hint.textContent = 'Selecione uma sala para verificar disponibilidade.';

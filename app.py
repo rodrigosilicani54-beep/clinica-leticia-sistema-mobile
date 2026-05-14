@@ -434,6 +434,10 @@ def normalize_appointment_status(value, default='agendado'):
     return text.strip().lower() if text.strip().lower() in VALID_APPOINTMENT_STATUSES else None
 
 
+def appointment_status_allows_no_room(status):
+    return normalize_appointment_status(status, default='agendado') == 'online'
+
+
 def normalize_lookup_key(value):
     text = str(value or '').strip()
     if not text:
@@ -3405,6 +3409,7 @@ def do_batch_agendamentos(items):
     cur = conn.cursor()
     try:
         appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
+        has_status = 'status' in appointment_cols
         to_insert = []
         errors = []
         for idx, a in enumerate(items, start=1):
@@ -3417,6 +3422,10 @@ def do_batch_agendamentos(items):
             hora_inicio = a.get('hora_inicio') or a.get('hora') or a.get('time')
             hora_fim = a.get('hora_fim') or a.get('endTime') or hora_inicio
             sala_id = normalize_room_id(a.get('sala_id') or a.get('salaId') or a.get('roomId') or a.get('sala'))
+            status = normalize_appointment_status(a.get('status'), default='agendado')
+            if status is None:
+                errors.append({'index': idx, 'errors': ['Status de agendamento invalido']})
+                continue
 
             item_errors = []
             if not data_field:
@@ -3426,7 +3435,12 @@ def do_batch_agendamentos(items):
 
             professional, professional_error = resolve_professional_reference(cur, profissional_input, profissional_id_input)
             patient, patient_error = resolve_patient_reference(cur, paciente_input, paciente_id_input)
-            room, room_error = resolve_room_reference(cur, sala_id)
+            room = None
+            room_error = None
+            if sala_id is not None:
+                room, room_error = resolve_room_reference(cur, sala_id)
+            elif not appointment_status_allows_no_room(status):
+                room_error = 'Selecione uma sala cadastrada.'
             for error in (professional_error, patient_error, room_error):
                 if error:
                     item_errors.append(error)
@@ -3435,22 +3449,24 @@ def do_batch_agendamentos(items):
                 errors.append({'index': idx, 'errors': item_errors})
                 continue
 
-            conflict = find_patient_room_conflict(
-                cur,
-                patient['id'],
-                room['id'],
-                data_field,
-                hora_inicio,
-                hora_fim,
-                appointment_cols=appointment_cols
-            ) or find_pending_patient_room_conflict(
-                to_insert,
-                patient['id'],
-                room['id'],
-                data_field,
-                hora_inicio,
-                hora_fim
-            )
+            conflict = None
+            if room:
+                conflict = find_patient_room_conflict(
+                    cur,
+                    patient['id'],
+                    room['id'],
+                    data_field,
+                    hora_inicio,
+                    hora_fim,
+                    appointment_cols=appointment_cols
+                ) or find_pending_patient_room_conflict(
+                    to_insert,
+                    patient['id'],
+                    room['id'],
+                    data_field,
+                    hora_inicio,
+                    hora_fim
+                )
             if conflict:
                 errors.append({'index': idx, 'errors': [build_patient_room_conflict_error(conflict)]})
                 continue
@@ -3464,8 +3480,9 @@ def do_batch_agendamentos(items):
                 'data': data_field,
                 'hora_inicio': hora_inicio,
                 'hora_fim': hora_fim,
-                'sala_id': room['id'],
-                'sala_nome': room['nome']
+                'sala_id': room['id'] if room else None,
+                'sala_nome': room['nome'] if room else None,
+                'status': status
             })
 
         if errors:
@@ -3474,12 +3491,16 @@ def do_batch_agendamentos(items):
         if to_insert:
             insert_columns = [
                 'profissional', 'profissional_id', 'paciente', 'paciente_id',
-                'tipo_atendimento', 'data', 'hora_inicio', 'hora_fim', 'sala_id', 'criado_em'
+                'tipo_atendimento', 'data', 'hora_inicio', 'hora_fim', 'sala_id'
             ]
+            if has_status:
+                insert_columns.append('status')
+            insert_columns.append('criado_em')
             placeholders = []
             values = []
             for item in to_insert:
-                placeholders.append('(%%s,%%s,%%s,%%s,%%s,%%s,%%s,%%s,%%s,NOW())')
+                row_placeholders = ['%s'] * (len(insert_columns) - 1) + ['NOW()']
+                placeholders.append(f"({','.join(row_placeholders)})")
                 values.extend([
                     item['profissional'],
                     item['profissional_id'],
@@ -3491,15 +3512,21 @@ def do_batch_agendamentos(items):
                     item['hora_fim'],
                     item['sala_id']
                 ])
+                if has_status:
+                    values.append(item['status'])
             sql = (
                 f"INSERT INTO agendamentos ({', '.join(insert_columns)}) VALUES "
                 + ','.join(placeholders)
-                + " RETURNING id, profissional, profissional_id, paciente, paciente_id, tipo_atendimento, data, hora_inicio, hora_fim, sala_id, criado_em"
+                + " RETURNING id, profissional, profissional_id, paciente, paciente_id, tipo_atendimento, data, hora_inicio, hora_fim, sala_id"
+                + (", status" if has_status else "")
+                + ", criado_em"
             )
 
             cur.execute(sql, tuple(values))
             rows = cur.fetchall()
-            for r in rows:
+            for item, r in zip(to_insert, rows):
+                row_status = r[10] if has_status else item.get('status')
+                row_criado_em = r[11] if has_status else r[10]
                 created.append({
                     'id': r[0],
                     'profissional': r[1],
@@ -3511,7 +3538,8 @@ def do_batch_agendamentos(items):
                     'hora_inicio': r[7].isoformat() if hasattr(r[7], 'isoformat') else r[7],
                     'hora_fim': r[8].isoformat() if hasattr(r[8], 'isoformat') else r[8],
                     'sala_id': r[9],
-                    'criado_em': r[10].isoformat() if r[10] else None
+                    'status': normalize_appointment_status(row_status, default='agendado'),
+                    'criado_em': row_criado_em.isoformat() if row_criado_em else None
                 })
 
         conn.commit()
@@ -4273,7 +4301,12 @@ def batch_agendamentos():
 
             professional, professional_error = resolve_professional_reference(cur, profissional_input, profissional_id_input)
             patient, patient_error = resolve_patient_reference(cur, paciente_input, paciente_id_input)
-            room, room_error = resolve_room_reference(cur, sala_id)
+            room = None
+            room_error = None
+            if sala_id is not None:
+                room, room_error = resolve_room_reference(cur, sala_id)
+            elif not appointment_status_allows_no_room(status):
+                room_error = 'Selecione uma sala cadastrada.'
             for error in (professional_error, patient_error, room_error):
                 if error:
                     item_errors.append(error)
@@ -4282,22 +4315,24 @@ def batch_agendamentos():
                 validation_errors.append({'index': item_index, 'errors': item_errors})
                 continue
 
-            conflict = find_patient_room_conflict(
-                cur,
-                patient['id'],
-                room['id'],
-                data_field,
-                hora_inicio,
-                hora_fim,
-                appointment_cols=appointment_cols
-            ) or find_pending_patient_room_conflict(
-                to_insert,
-                patient['id'],
-                room['id'],
-                data_field,
-                hora_inicio,
-                hora_fim
-            )
+            conflict = None
+            if room:
+                conflict = find_patient_room_conflict(
+                    cur,
+                    patient['id'],
+                    room['id'],
+                    data_field,
+                    hora_inicio,
+                    hora_fim,
+                    appointment_cols=appointment_cols
+                ) or find_pending_patient_room_conflict(
+                    to_insert,
+                    patient['id'],
+                    room['id'],
+                    data_field,
+                    hora_inicio,
+                    hora_fim
+                )
             if conflict:
                 validation_errors.append({
                     'index': item_index,
@@ -4315,8 +4350,8 @@ def batch_agendamentos():
                 'hora_inicio': hora_inicio,
                 'hora_fim': hora_fim,
                 'quantidade_sessoes': quantidade_sessoes,
-                'sala_id': room['id'],
-                'sala_nome': room['nome'],
+                'sala_id': room['id'] if room else None,
+                'sala_nome': room['nome'] if room else None,
                 'created_by': created_by,
                 'recorrencia_grupo_id': recurrence_group_id,
                 'recorrencia_indice': recurrence_index,
@@ -5269,7 +5304,8 @@ def criar_agendamento():
         return jsonify({'success': False, 'error': 'Selecione um profissional cadastrado.'}), 400
     if not paciente and not paciente_id:
         return jsonify({'success': False, 'error': 'Selecione um paciente cadastrado.'}), 400
-    if sala_id is None:
+    room_required = not appointment_status_allows_no_room(status)
+    if room_required and sala_id is None:
         return jsonify({'success': False, 'error': 'Selecione uma sala cadastrada.'}), 400
     if not data_field:
         return jsonify({'success': False, 'error': 'data is required'}), 400
@@ -5305,27 +5341,31 @@ def criar_agendamento():
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': patient_error}), 400
-        room_ref, room_error = resolve_room_reference(cur, sala_id)
-        if room_error:
-            cur.close()
-            conn.close()
-            return jsonify({'success': False, 'error': room_error}), 400
+        room_ref = None
+        if sala_id is not None:
+            room_ref, room_error = resolve_room_reference(cur, sala_id)
+            if room_error:
+                cur.close()
+                conn.close()
+                return jsonify({'success': False, 'error': room_error}), 400
 
         profissional = str(professional_ref['id'])
         profissional_id = professional_ref['id']
         paciente = patient_ref['nome']
         paciente_id = patient_ref['id']
-        sala_id = room_ref['id']
+        sala_id = room_ref['id'] if room_ref else None
 
-        conflict = find_patient_room_conflict(
-            cur,
-            paciente_id,
-            sala_id,
-            data_field,
-            hora_inicio,
-            hora_fim,
-            appointment_cols=appointment_cols
-        )
+        conflict = None
+        if sala_id is not None:
+            conflict = find_patient_room_conflict(
+                cur,
+                paciente_id,
+                sala_id,
+                data_field,
+                hora_inicio,
+                hora_fim,
+                appointment_cols=appointment_cols
+            )
         if conflict:
             cur.close()
             conn.close()
@@ -6353,6 +6393,23 @@ def atualizar_agendamento(agendamento_id):
         data.get('apply_recurrence_scope') or
         data.get('applyRecurrenceScope')
     )
+    recurrence_group_provided = any(key in data for key in (
+        'recorrencia_grupo_id', 'recurrenceGroupId', 'repeatGroupId', 'recurrence_group_id'
+    ))
+    recurrence_index_provided = any(key in data for key in (
+        'recorrencia_indice', 'recurrenceIndex', 'repeatIndex'
+    ))
+    recurrence_total_provided = any(key in data for key in (
+        'recorrencia_total', 'recurrenceTotal', 'repeatTotal'
+    ))
+    new_recurrence_group_id = (
+        data.get('recorrencia_grupo_id') or
+        data.get('recurrenceGroupId') or
+        data.get('repeatGroupId') or
+        data.get('recurrence_group_id')
+    )
+    new_recurrence_index = data.get('recorrencia_indice') or data.get('recurrenceIndex') or data.get('repeatIndex')
+    new_recurrence_total = data.get('recorrencia_total') or data.get('recurrenceTotal') or data.get('repeatTotal')
     sala_id_provided = any(key in data for key in ('sala_id', 'salaId', 'roomId', 'sala'))
     sala_id = normalize_room_id(data.get('sala_id') or data.get('salaId') or data.get('roomId') or data.get('sala'))
     status_provided = 'status' in data
@@ -6363,7 +6420,7 @@ def atualizar_agendamento(agendamento_id):
     release_lock = bool(data.get('release_lock'))
     changes_schedule_data = profissional_provided or paciente_provided or any(value is not None for value in (
         tipo, data_field, hora_inicio, hora_fim, quantidade_sessoes
-    )) or sala_id_provided
+    )) or sala_id_provided or recurrence_group_provided or recurrence_index_provided or recurrence_total_provided
     if changes_schedule_data and normalize_level(request_user.get('level')) != 'admin':
         return jsonify({'success': False, 'error': 'Acesso negado para alterar dados do agendamento'}), 403
 
@@ -6405,6 +6462,10 @@ def atualizar_agendamento(agendamento_id):
             audit_select_fields.insert(6, 'sala_id')
         if 'recorrencia_grupo_id' in appointment_cols:
             audit_select_fields.append('recorrencia_grupo_id')
+        if 'recorrencia_indice' in appointment_cols:
+            audit_select_fields.append('recorrencia_indice')
+        if 'recorrencia_total' in appointment_cols:
+            audit_select_fields.append('recorrencia_total')
         cur.execute(
             f"SELECT {', '.join(audit_select_fields)} FROM agendamentos WHERE id = %s",
             (agendamento_id,)
@@ -6444,12 +6505,13 @@ def atualizar_agendamento(agendamento_id):
             paciente = patient_ref['nome']
             resolved_paciente_id = patient_ref['id']
         if sala_id_provided:
-            room_ref, room_error = resolve_room_reference(cur, sala_id)
-            if room_error:
-                cur.close()
-                conn.close()
-                return jsonify({'success': False, 'error': room_error}), 400
-            sala_id = room_ref['id']
+            if sala_id is not None:
+                room_ref, room_error = resolve_room_reference(cur, sala_id)
+                if room_error:
+                    cur.close()
+                    conn.close()
+                    return jsonify({'success': False, 'error': room_error}), 400
+                sala_id = room_ref['id']
 
         if release_lock:
             if current_status != 'cancelado_profissional':
@@ -6465,6 +6527,10 @@ def atualizar_agendamento(agendamento_id):
             changes_schedule_data and novo_status is None and not release_lock
         ) else 'single'
         recurrence_group_id = current_data.get('recorrencia_grupo_id')
+        if recurrence_group_provided and recurrence_group_id and str(new_recurrence_group_id or '') != str(recurrence_group_id or ''):
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Este agendamento ja pertence a uma repeticao.'}), 400
         target_rows = [{'id': agendamento_id, **current_data}]
         if effective_recurrence_scope != 'single':
             if recurrence_group_id:
@@ -6501,16 +6567,23 @@ def atualizar_agendamento(agendamento_id):
                 effective_data = data_field if apply_data_field else target_row.get('data')
                 effective_hora_inicio = hora_inicio if hora_inicio is not None else target_row.get('hora_inicio')
                 effective_hora_fim = hora_fim if hora_fim is not None else (target_row.get('hora_fim') or effective_hora_inicio)
-                conflict = find_patient_room_conflict(
-                    cur,
-                    effective_paciente_id,
-                    effective_sala_id,
-                    effective_data,
-                    effective_hora_inicio,
-                    effective_hora_fim,
-                    exclude_agendamento_id=target_row.get('id'),
-                    appointment_cols=appointment_cols
-                )
+                effective_status = novo_status if novo_status is not None else target_row.get('status')
+                if effective_sala_id is None and not appointment_status_allows_no_room(effective_status):
+                    cur.close()
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'Selecione uma sala cadastrada.'}), 400
+                conflict = None
+                if effective_sala_id is not None:
+                    conflict = find_patient_room_conflict(
+                        cur,
+                        effective_paciente_id,
+                        effective_sala_id,
+                        effective_data,
+                        effective_hora_inicio,
+                        effective_hora_fim,
+                        exclude_agendamento_id=target_row.get('id'),
+                        appointment_cols=appointment_cols
+                    )
                 if conflict:
                     cur.close()
                     conn.close()
@@ -6571,6 +6644,18 @@ def atualizar_agendamento(agendamento_id):
             fields.append('sala_id = %s')
             values.append(sala_id)
             applied_field_pairs['sala_id'] = sala_id
+        if recurrence_group_provided and 'recorrencia_grupo_id' in appointment_cols:
+            fields.append('recorrencia_grupo_id = %s')
+            values.append(new_recurrence_group_id)
+            applied_field_pairs['recorrencia_grupo_id'] = new_recurrence_group_id
+        if recurrence_index_provided and 'recorrencia_indice' in appointment_cols:
+            fields.append('recorrencia_indice = %s')
+            values.append(new_recurrence_index)
+            applied_field_pairs['recorrencia_indice'] = new_recurrence_index
+        if recurrence_total_provided and 'recorrencia_total' in appointment_cols:
+            fields.append('recorrencia_total = %s')
+            values.append(new_recurrence_total)
+            applied_field_pairs['recorrencia_total'] = new_recurrence_total
 
         if release_lock:
             fields.append('cancelado_por_username = %s')
