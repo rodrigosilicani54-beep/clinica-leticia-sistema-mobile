@@ -8906,6 +8906,7 @@
             if (startTimeInput) startTimeInput.addEventListener('change', () => updateRoomAvailabilityHint());
             if (endTimeInput) endTimeInput.addEventListener('change', () => updateRoomAvailabilityHint());
 
+            setupRemarkTimeInputs();
             loadPatientList();
         });
 
@@ -9284,6 +9285,50 @@
             });
 
             populateEndTimeOptions(startInput.value, endInput.value);
+        }
+
+        function normalizeTimeInputField(input) {
+            if (!input) return;
+            const normalized = normalizeTime(String(input.value || '').trim());
+            if (input.value !== normalized) {
+                input.value = normalized;
+            }
+        }
+
+        function attachRemarkTimeInput(input) {
+            if (!input || input.dataset.remarkTimeNormalizer === '1') return;
+            input.dataset.remarkTimeNormalizer = '1';
+            input.type = 'text';
+            input.inputMode = 'numeric';
+            input.setAttribute('pattern', '^([01]\\d|2[0-3]):[0-5]\\d$');
+            input.setAttribute('placeholder', 'HH:MM');
+            input.setAttribute('list', 'timeSuggestions');
+            const normalizeAndCheck = () => {
+                normalizeTimeInputField(input);
+                checkRemarkTargetConflict();
+            };
+            input.addEventListener('change', normalizeAndCheck, true);
+            input.addEventListener('blur', normalizeAndCheck);
+        }
+
+        function getRemarkTimeInputs(root = document) {
+            const selectors = [
+                '#remarkNewTime',
+                '#remarkNewEndTime',
+                '#remarkConflictNewTime',
+                '#remarkConflictNewEndTime',
+                'input[id^="remarkChainTime"]',
+                'input[id^="remarkChainEndTime"]'
+            ];
+            return root.querySelectorAll(selectors.join(','));
+        }
+
+        function setupRemarkTimeInputs(root = document) {
+            getRemarkTimeInputs(root).forEach(attachRemarkTimeInput);
+        }
+
+        function normalizeRemarkTimeInputs(root = document) {
+            getRemarkTimeInputs(root).forEach(normalizeTimeInputField);
         }
 
         // Reports
@@ -11629,11 +11674,11 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-2">Início:</label>
-                            <input type="text" id="remarkChainTime${index}" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                            <input type="text" id="remarkChainTime${index}" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\\d|2[0-3]):[0-5]\\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-2">Término:</label>
-                            <input type="text" id="remarkChainEndTime${index}" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                            <input type="text" id="remarkChainEndTime${index}" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\\d|2[0-3]):[0-5]\\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                         </div>
                     </div>
                 `;
@@ -11641,15 +11686,7 @@
                 const chainLabels = row.querySelectorAll('label');
                 if (chainLabels[1]) chainLabels[1].textContent = 'Inicio:';
                 if (chainLabels[2]) chainLabels[2].textContent = 'Termino:';
-                const chainStart = document.getElementById(`remarkChainTime${index}`);
-                const chainEnd = document.getElementById(`remarkChainEndTime${index}`);
-                [chainStart, chainEnd].forEach(input => {
-                    if (!input) return;
-                    input.type = 'time';
-                    input.step = '60';
-                    input.removeAttribute('list');
-                    input.removeAttribute('placeholder');
-                });
+                setupRemarkTimeInputs(row);
                 const chainTitle = document.getElementById(`remarkChainTitle${index}`);
                 if (chainTitle && chainTitle.textContent.includes('pr')) {
                     chainTitle.textContent = 'Realocar proximo conflito';
@@ -11827,6 +11864,7 @@
                 return;
             }
             const appointment = getAppointmentById(document.getElementById('remarkAppointmentId').value);
+            normalizeRemarkTimeInputs();
             const newDate = document.getElementById('remarkNewDate').value;
             const newTime = document.getElementById('remarkNewTime').value;
             const newEndTime = document.getElementById('remarkNewEndTime').value;

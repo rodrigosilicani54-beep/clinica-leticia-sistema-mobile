@@ -1767,11 +1767,11 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-2">Início:</label>
-                    <input type="text" id="remarkNewTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                    <input type="text" id="remarkNewTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-2">Término:</label>
-                    <input type="text" id="remarkNewEndTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                    <input type="text" id="remarkNewEndTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                 </div>
             </div>
             <div id="remarkConflictWarning" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-900 mb-4"></div>
@@ -1788,11 +1788,11 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-2">Inicio:</label>
-                        <input type="time" id="remarkConflictNewTime" onchange="checkRemarkTargetConflict()" step="60" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                        <input type="text" id="remarkConflictNewTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-2">Termino:</label>
-                        <input type="time" id="remarkConflictNewEndTime" onchange="checkRemarkTargetConflict()" step="60" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
+                        <input type="text" id="remarkConflictNewEndTime" onchange="checkRemarkTargetConflict()" placeholder="HH:MM" inputmode="numeric" pattern="^([01]\d|2[0-3]):[0-5]\d$" list="timeSuggestions" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-sky-500">
                     </div>
                 </div>
                 <div id="remarkConflictRelocationWarning" class="hidden mt-3 text-sm text-red-700"></div>
@@ -2560,7 +2560,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260514-online-repeat-edit"></script>
+    <script src="static/app.js?v=20260514-remark-time"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
