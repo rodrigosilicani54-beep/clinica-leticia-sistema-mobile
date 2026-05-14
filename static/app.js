@@ -123,6 +123,13 @@
             };
             return aliases[key] || raw.toLowerCase();
         }
+
+        function parseBooleanFlag(value) {
+            if (value === true || value === 1) return true;
+            if (value === false || value === 0 || value === null || typeof value === 'undefined') return false;
+            const normalized = String(value).trim().toLowerCase();
+            return ['1', 'true', 'sim', 'yes', 's'].includes(normalized);
+        }
         
         function normalizeAppointmentRecord(apt) {
             const professionalId = apt.professionalId || apt.profissional_id || apt.professional_id || apt.profissional || apt.professional || '';
@@ -136,6 +143,9 @@
             const recurrenceGroupId = apt.recurrenceGroupId || apt.recorrencia_grupo_id || apt.repeatGroupId || apt.recurrence_group_id || '';
             const recurrenceIndex = apt.recurrenceIndex ?? apt.recorrencia_indice ?? apt.repeatIndex ?? null;
             const recurrenceTotal = apt.recurrenceTotal ?? apt.recorrencia_total ?? apt.repeatTotal ?? null;
+            const remarqueAprovado = parseBooleanFlag(
+                apt.remarqueAprovado ?? apt.remarque_aprovado ?? apt.remarkApproved ?? apt.remarqueApproved ?? apt.isRemarkAppointment ?? apt.remarque
+            );
 
             return {
                 ...apt,
@@ -152,12 +162,44 @@
                 endTime,
                 status: normalizeScheduleStatus(apt.status || 'agendado'),
                 lockedBy: apt.lockedBy || apt.cancelado_por_username || null,
+                remarqueAprovado,
                 lastAction: apt.lastAction || {
                     user: 'Sistema',
                     timestamp: new Date().toISOString(),
                     action: 'inicializado'
                 }
             };
+        }
+
+        function isAppointmentRemarkApproved(appointment) {
+            if (!appointment) return false;
+            if (parseBooleanFlag(appointment.remarqueAprovado ?? appointment.remarque_aprovado ?? appointment.remarkApproved ?? appointment.remarqueApproved)) {
+                return true;
+            }
+            const action = String(appointment.lastAction?.action || '').trim().toLowerCase();
+            if (['remarque_autorizado', 'remarque_aprovado'].includes(action)) {
+                return true;
+            }
+            const appointmentId = String(appointment.id || '').trim();
+            if (!appointmentId || !Array.isArray(remarkRequests)) return false;
+            return remarkRequests.some(request =>
+                String(request.appointmentId || request.agendamento_id || '').trim() === appointmentId &&
+                String(request.status || '').trim().toLowerCase() === 'aprovado'
+            );
+        }
+
+        function createAppointmentRemarkBadge() {
+            const badge = document.createElement('span');
+            badge.className = 'appointment-remarque-badge';
+            badge.textContent = 'Remarque';
+            badge.title = 'Agendamento remarcado';
+            return badge;
+        }
+
+        function getAppointmentRemarkBadgeHtml(appointment) {
+            return isAppointmentRemarkApproved(appointment)
+                ? '<span class="appointment-remarque-badge" title="Agendamento remarcado">Remarque</span>'
+                : '';
         }
 
         // Ensure all appointments have normalized keys for professional, date, time and action history
@@ -310,7 +352,7 @@
 
                 overlay.addEventListener('click', (event) => {
                     if (event.target === overlay) {
-                        finish(null);
+                        event.stopPropagation();
                     }
                 });
 
@@ -3006,7 +3048,9 @@
                 cancelBtn.onclick = () => finish(null);
                 confirmBtn.onclick = submit;
                 overlay.addEventListener('click', (event) => {
-                    if (event.target === overlay) finish(null);
+                    if (event.target === overlay) {
+                        event.stopPropagation();
+                    }
                 });
 
                 actions.appendChild(cancelBtn);
@@ -3580,8 +3624,9 @@
                 const roomName = getRoomName(appointment.roomId) || 'Sem sala';
                 const delayed = isDailyPanelAppointmentDelayed(appointment, dateValue);
                 const statusClass = getStatusColor(status);
+                const hasRemarkBadge = isAppointmentRemarkApproved(appointment);
                 return `
-                    <button type="button" onclick="openDailyPanelAppointment('${appointmentId}')" class="block w-full px-4 py-3 text-left hover:bg-gray-50">
+                    <button type="button" onclick="openDailyPanelAppointment('${appointmentId}')" class="daily-panel-appointment-row ${hasRemarkBadge ? 'has-remarque' : ''} block w-full px-4 py-3 text-left hover:bg-gray-50">
                         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
@@ -3597,6 +3642,7 @@
                                 <div class="text-xs text-gray-500">${escapeAuditHtml(appointment.quantidade_sessoes || '')}${appointment.quantidade_sessoes ? ' sessao(oes)' : ''}</div>
                             </div>
                         </div>
+                        ${getAppointmentRemarkBadgeHtml(appointment)}
                     </button>
                 `;
             }).join('');
@@ -5170,7 +5216,7 @@
                             'quantidade_sessoes', 'roomId', 'clientName', 'type',
                             'observations', 'createdAt', 'status', 'lockedBy',
                             'ultima_acao', 'atualizado_em', 'recurrenceGroupId',
-                            'recurrenceIndex', 'recurrenceTotal'
+                            'recurrenceIndex', 'recurrenceTotal', 'remarqueAprovado'
                         ];
 
                         const buildAppointmentKey = (apt) => {
@@ -5234,6 +5280,7 @@
                                 recurrenceGroupId: a.recorrencia_grupo_id || a.recurrenceGroupId || '',
                                 recurrenceIndex: a.recorrencia_indice ?? a.recurrenceIndex ?? null,
                                 recurrenceTotal: a.recorrencia_total ?? a.recurrenceTotal ?? null,
+                                remarqueAprovado: parseBooleanFlag(a.remarque_aprovado ?? a.remarqueAprovado),
                                 syncStatus: null
                             };
 
@@ -5277,6 +5324,7 @@
                                     recurrenceGroupId: appObj.recurrenceGroupId || '',
                                     recurrenceIndex: appObj.recurrenceIndex,
                                     recurrenceTotal: appObj.recurrenceTotal,
+                                    remarqueAprovado: appObj.remarqueAprovado,
                                     syncStatus: null
                                 };
                                 if (appObj.lastAction) {
@@ -5697,9 +5745,10 @@
                     const colorClass = getAppointmentColor(appointment.type);
                     const statusMeta = getScheduleStatusMeta(appointment.status);
                     const roomName = getRoomName(appointment.roomId);
+                    const hasRemarkBadge = isAppointmentRemarkApproved(appointment);
 
                     const block = document.createElement('div');
-                    block.className = `appointment-block ${colorClass} schedule-appointment-block ${getScheduleTypeClass(appointment.type)} ${getScheduleStatusClass(appointment.status)}`;
+                    block.className = `appointment-block ${colorClass} schedule-appointment-block ${getScheduleTypeClass(appointment.type)} ${getScheduleStatusClass(appointment.status)}${hasRemarkBadge ? ' has-remarque' : ''}`;
                     
                     // ✅ Grid-based positioning com linha inicial precisa
                     block.style.position = 'absolute';
@@ -5740,7 +5789,7 @@
                     const content = document.createElement('div');
                     content.className = 'schedule-appointment-content';
                     const professionalName = getProfessionalLabel(appointment.professionalId);
-                    content.title = `${formatAppointmentTime(appointment)} - ${appointment.clientName || 'Paciente'} - ${professionalName} - ${getTypeLabel(appointment.type)}${roomName ? ' - Sala: ' + roomName : ''}${statusMeta.shortLabel ? ' - ' + statusMeta.label : ''}`;
+                    content.title = `${formatAppointmentTime(appointment)} - ${appointment.clientName || 'Paciente'} - ${professionalName} - ${getTypeLabel(appointment.type)}${roomName ? ' - Sala: ' + roomName : ''}${statusMeta.shortLabel ? ' - ' + statusMeta.label : ''}${hasRemarkBadge ? ' - Remarque' : ''}`;
 
                     const timeDisplay = document.createElement('span');
                     timeDisplay.className = 'schedule-appointment-time';
@@ -5778,6 +5827,9 @@
 
                     block.appendChild(statusIndicator);
                     block.appendChild(content);
+                    if (hasRemarkBadge) {
+                        block.appendChild(createAppointmentRemarkBadge());
+                    }
                     if (statusMeta.shortLabel) {
                         const statusLabel = document.createElement('span');
                         statusLabel.className = 'schedule-appointment-status-label';
@@ -12224,6 +12276,7 @@
             appointment.date = request.newDate;
             appointment.time = request.newTime;
             appointment.endTime = request.newEndTime;
+            appointment.remarqueAprovado = true;
             appointment.lastAction = { user: currentUser ? currentUser.name : 'Sistema', timestamp: new Date().toISOString(), action: 'remarque_autorizado' };
 
             if (request.invertTimes && conflict) {
@@ -14362,10 +14415,10 @@
             setTimeout(reloadWithoutCache, 900);
         }
 
-        // Close modals when clicking outside, but keep the login modal locked until successful login
+        // Keep modal dialogs open when the backdrop is clicked; users must use the visible actions.
         document.addEventListener('click', function(event) {
-            if (event.target.classList.contains('modal') && event.target.id !== 'loginModal') {
-                event.target.classList.remove('active');
+            if (event.target.classList.contains('modal')) {
+                event.stopPropagation();
             }
         });
         if (window.pywebview) {

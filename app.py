@@ -5543,6 +5543,12 @@ def listar_agendamentos():
 
         appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
         ensure_agendamento_recurrence_columns(cur, appointment_cols)
+        include_remarque_flag = False
+        try:
+            ensure_remarque_table_cached(cur)
+            include_remarque_flag = True
+        except Exception as remarque_schema_error:
+            print('Aviso: nao foi possivel preparar indicador de remarque:', remarque_schema_error)
         conn.commit()
 
         if profissional_filter:
@@ -5586,6 +5592,11 @@ def listar_agendamentos():
             select_fields.append('recorrencia_indice')
         if 'recorrencia_total' in appointment_cols:
             select_fields.append('recorrencia_total')
+        if include_remarque_flag:
+            select_fields.append(
+                "EXISTS (SELECT 1 FROM remarque_solicitacoes rs "
+                "WHERE rs.agendamento_id = agendamentos.id AND rs.status = 'aprovado') AS remarque_aprovado"
+            )
         
         select_fields.append('criado_em')
 
@@ -5649,6 +5660,9 @@ def listar_agendamentos():
                 idx += 1
             if 'recorrencia_total' in appointment_cols:
                 item['recorrencia_total'] = r[idx] if idx < len(r) else None
+                idx += 1
+            if include_remarque_flag:
+                item['remarque_aprovado'] = bool(r[idx]) if idx < len(r) else False
                 idx += 1
             
             item['criado_em'] = r[idx].isoformat() if r[idx] else None
