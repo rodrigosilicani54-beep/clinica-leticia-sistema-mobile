@@ -492,17 +492,17 @@
             editor: {
                 canView: true,
                 canViewPatients: true,
-                canCreate: true,
+                canCreate: false,
                 canCreateProfessional: false,
                 canCreatePatient: false,
-                canEdit: true,
+                canEdit: false,
                 canEditProfessionals: false,
                 canEditPatients: false,
                 canDelete: false,
                 canExport: true,
                 canExportReport: true,
-                canImport: true,
-                canBulkEdit: true,
+                canImport: false,
+                canBulkEdit: false,
                 canBulkCancel: false,
                 canManageProfessionals: true,
                 canManageUsers: false,
@@ -6361,18 +6361,15 @@
         }
 
         function editAppointment(appointment) {
-            if (currentUser.level === 'viewer') {
-                // Viewer users can only access appointments for their linked professional
-                if (!currentUser.professionalId || String(appointment.professionalId) !== String(currentUser.professionalId)) {
-                    showPermissionDenied('view');
-                    return;
-                }
-            } else if (!checkPermission('edit')) {
-                showPermissionDenied('edit');
+            const canEditScheduleData = currentUser && currentUser.level === 'admin' && checkPermission('edit');
+            const canOpenOwnAppointment = currentUser && currentUser.level === 'viewer' && userOwnsAppointment(appointment);
+            const canOpenForStatus = canUpdateAppointmentStatus(null, appointment);
+            if (!canEditScheduleData && !canOpenOwnAppointment && !canOpenForStatus) {
+                showPermissionDenied('view');
                 return;
             }
             
-            document.getElementById('scheduleModalTitle').textContent = 'Visualizar/Editar Agendamento';
+            document.getElementById('scheduleModalTitle').textContent = canEditScheduleData ? 'Visualizar/Editar Agendamento' : 'Visualizar Agendamento';
             setAppointmentSavingState(false);
             document.getElementById('appointmentId').value = appointment.id;
             document.getElementById('appointmentDateInput').value = appointment.date;
@@ -6396,23 +6393,26 @@
             document.getElementById('observations').value = appointment.observations || '';
             setRepeatControlsVisible(false);
 
-            const isViewer = currentUser.level === 'viewer';
             const submitButton = document.querySelector('#scheduleModal button[type="submit"]');
             const appointmentProfessionalSelect = document.getElementById('appointmentProfessional');
             const appointmentRoomSelect = document.getElementById('appointmentRoom');
             const dateInput = document.getElementById('appointmentDateInput');
             const timeInput = document.getElementById('appointmentTimeInput');
+            const endInput = document.getElementById('appointmentEndInput');
             const clientNameInput = document.getElementById('clientName');
             const appointmentTypeSelect = document.getElementById('appointmentType');
+            const observationsInput = document.getElementById('observations');
 
-            if (isViewer) {
+            if (!canEditScheduleData) {
                 submitButton.style.display = 'none';
                 appointmentProfessionalSelect.disabled = true;
                 appointmentRoomSelect.disabled = true;
                 dateInput.disabled = true;
                 timeInput.disabled = true;
+                endInput.disabled = true;
                 clientNameInput.disabled = true;
                 appointmentTypeSelect.disabled = true;
+                observationsInput.disabled = true;
                 document.getElementById('deleteAppointmentBtn').style.display = 'none';
             } else {
                 submitButton.style.display = 'block';
@@ -6420,13 +6420,15 @@
                 appointmentRoomSelect.disabled = false;
                 dateInput.disabled = false;
                 timeInput.disabled = false;
+                endInput.disabled = false;
                 clientNameInput.disabled = false;
                 appointmentTypeSelect.disabled = false;
+                observationsInput.disabled = false;
                 document.getElementById('deleteAppointmentBtn').style.display = userPermissions.canDelete ? 'block' : 'none';
             }
             
-            // Show additional edit options for imported appointments
-            showEditOptions(appointment);
+            // Show additional edit options only when the user can edit schedule data.
+            showEditOptions(appointment, canEditScheduleData);
             
             // Show action options section
             showAppointmentActionOptions(appointment);
@@ -6611,6 +6613,7 @@
 
         function canUpdateAppointmentStatus(status = null, appointment = null) {
             if (hasFullAppointmentStatusAccess()) return true;
+            if (currentUser && currentUser.level === 'editor') return true;
             const normalizedStatus = status ? normalizeScheduleStatus(status) : null;
             if (!normalizedStatus) {
                 return currentUser && currentUser.level === 'viewer' && userOwnsAppointment(appointment);
@@ -8526,7 +8529,17 @@
             }, 4000);
         }
 
-        function showEditOptions(appointment) {
+        function showEditOptions(appointment, canEditScheduleData = true) {
+            const modal = document.getElementById('scheduleModal');
+            const existingBadge = modal.querySelector('.import-badge');
+            if (existingBadge) {
+                existingBadge.remove();
+            }
+
+            if (!canEditScheduleData) {
+                return;
+            }
+
             // Enable all fields for editing
             document.getElementById('appointmentProfessional').disabled = false;
             document.getElementById('appointmentRoom').disabled = false;
@@ -8537,12 +8550,6 @@
             document.getElementById('observations').disabled = false;
             
             // Add visual indicator that this is an editable imported appointment
-            const modal = document.getElementById('scheduleModal');
-            const existingBadge = modal.querySelector('.import-badge');
-            if (existingBadge) {
-                existingBadge.remove();
-            }
-            
             // Add badge to show this was imported
             const badge = document.createElement('div');
             badge.className = 'import-badge bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium mb-3 inline-block';

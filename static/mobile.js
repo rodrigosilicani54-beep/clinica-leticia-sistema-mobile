@@ -1330,6 +1330,7 @@
 
     function canUpdateAppointmentStatus(status, appointment) {
         if (hasFullAppointmentStatusAccess()) return true;
+        if (state.user && state.user.level === "editor") return true;
         return !!state.user
             && state.user.level === "viewer"
             && userOwnsAppointment(appointment)

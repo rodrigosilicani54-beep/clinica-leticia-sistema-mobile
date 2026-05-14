@@ -1295,17 +1295,17 @@ USER_PERMISSION_DEFAULTS = {
     'editor': {
         'canView': True,
         'canViewPatients': True,
-        'canCreate': True,
+        'canCreate': False,
         'canCreateProfessional': False,
         'canCreatePatient': False,
-        'canEdit': True,
+        'canEdit': False,
         'canEditProfessionals': False,
         'canEditPatients': False,
         'canDelete': False,
         'canExport': True,
         'canExportReport': True,
-        'canImport': True,
-        'canBulkEdit': True,
+        'canImport': False,
+        'canBulkEdit': False,
         'canBulkCancel': False,
         'canManageProfessionals': True,
         'canManageUsers': False,
@@ -2326,6 +2326,8 @@ def user_can_update_appointment_status(cur, user, status=None, current_data=None
     normalized_header = normalize_name_py(level_or_name).upper()
     if normalize_level(user.get('level')) == 'admin' or 'ADMINISTRADOR' in normalized_header:
         return True
+    if normalize_level(user.get('level')) == 'editor':
+        return True
     if any(marker in normalized_header for marker in ('ATAC', 'RECEP', 'RECEPCAO', 'CEO')):
         return True
     if (
@@ -2364,7 +2366,7 @@ def user_can_update_appointment_status(cur, user, status=None, current_data=None
     has_full_status_access = normalize_level(level) == 'admin' or 'ADMINISTRADOR' in text or any(
         marker in text for marker in ('ATAC', 'RECEP', 'RECEPCAO', 'CEO')
     )
-    if has_full_status_access:
+    if has_full_status_access or normalize_level(level) == 'editor':
         return True
     return (
         normalize_level(level) == 'viewer'
@@ -4196,7 +4198,7 @@ def batch_profissionais():
 
 @app.route('/api/agendamentos/batch', methods=['POST'])
 def batch_agendamentos():
-    auth_check = require_editor_or_admin()
+    auth_check = require_admin()
     if auth_check:
         return auth_check
 
@@ -4589,7 +4591,7 @@ def create_indexes():
 
 @app.route('/api/sync', methods=['POST'])
 def full_sync():
-    auth_check = require_editor_or_admin()
+    auth_check = require_admin()
     if auth_check:
         return auth_check
 
@@ -5235,7 +5237,7 @@ def deletar_profissional(prof_id):
 
 @app.route('/api/agendamentos', methods=['POST'])
 def criar_agendamento():
-    auth_check = require_editor_or_admin()
+    auth_check = require_admin()
     if auth_check:
         return auth_check
 
@@ -6362,7 +6364,7 @@ def atualizar_agendamento(agendamento_id):
     changes_schedule_data = profissional_provided or paciente_provided or any(value is not None for value in (
         tipo, data_field, hora_inicio, hora_fim, quantidade_sessoes
     )) or sala_id_provided
-    if changes_schedule_data and normalize_level(request_user.get('level')) not in ('admin', 'editor'):
+    if changes_schedule_data and normalize_level(request_user.get('level')) != 'admin':
         return jsonify({'success': False, 'error': 'Acesso negado para alterar dados do agendamento'}), 403
 
     try:
