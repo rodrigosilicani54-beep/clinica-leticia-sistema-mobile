@@ -90,7 +90,12 @@
             state.agendaMode = "day";
             loadAgenda({ force: true });
         });
-        els.professionalFilter.addEventListener("change", () => loadAgenda({ force: true }));
+        els.professionalFilter.addEventListener("change", () => {
+            if (isCurrentUserViewer()) {
+                applyUserDefaultProfessional();
+            }
+            loadAgenda({ force: true });
+        });
         els.agendaStatusFilter.addEventListener("change", renderAgenda);
         els.remarkStatusFilter.addEventListener("change", renderRemarks);
         els.roomStatusFilter.addEventListener("change", renderRooms);
@@ -410,6 +415,7 @@
             loadRooms()
         ]);
         applyUserDefaultProfessional();
+        updateMobileAccessUi();
         await Promise.all([
             loadAgenda({ force: true }),
             loadRemarks({ force: true })
@@ -428,6 +434,9 @@
     }
 
     function showTab(tabName) {
+        if (tabName === "rooms" && isCurrentUserViewer()) {
+            tabName = "agenda";
+        }
         const isAgenda = tabName === "agenda";
         const isRemarks = tabName === "remarques";
         const isRooms = tabName === "rooms";
@@ -467,10 +476,13 @@
     }
 
     function renderProfessionalFilter() {
-        const selected = els.professionalFilter.value;
-        els.professionalFilter.innerHTML = '<option value="">Todos</option>';
+        const linkedProfessionalId = getCurrentUserProfessionalId();
+        const lockedToUser = isCurrentUserViewer();
+        const selected = lockedToUser ? linkedProfessionalId : els.professionalFilter.value;
+        els.professionalFilter.innerHTML = lockedToUser ? "" : '<option value="">Todos</option>';
         state.professionals
             .slice()
+            .filter((professional) => !lockedToUser || String(professional.id) === linkedProfessionalId)
             .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
             .forEach((professional) => {
                 const option = document.createElement("option");
@@ -478,9 +490,23 @@
                 option.textContent = professional.name;
                 els.professionalFilter.appendChild(option);
             });
+        if (lockedToUser && linkedProfessionalId && ![...els.professionalFilter.options].some((option) => option.value === linkedProfessionalId)) {
+            const option = document.createElement("option");
+            option.value = linkedProfessionalId;
+            option.textContent = "Meu profissional";
+            els.professionalFilter.appendChild(option);
+        }
+        if (lockedToUser && !linkedProfessionalId) {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "Profissional nao vinculado";
+            els.professionalFilter.appendChild(option);
+        }
         if ([...els.professionalFilter.options].some((option) => option.value === selected)) {
             els.professionalFilter.value = selected;
         }
+        els.professionalFilter.disabled = lockedToUser;
+        els.professionalFilter.classList.toggle("locked-field", lockedToUser);
     }
 
     async function loadRooms() {
@@ -495,15 +521,20 @@
     }
 
     function applyUserDefaultProfessional() {
-        const professionalId = String(state.user && (state.user.professionalId || state.user.profissional_id) || "").trim();
+        const professionalId = getCurrentUserProfessionalId();
         if (professionalId && [...els.professionalFilter.options].some((option) => option.value === professionalId)) {
             els.professionalFilter.value = professionalId;
+        }
+        if (isCurrentUserViewer()) {
+            els.professionalFilter.disabled = true;
+            els.professionalFilter.classList.add("locked-field");
         }
     }
 
     async function loadAgenda(options = {}) {
         const date = getSelectedAgendaDateValue();
         state.agendaRange = getAgendaRange(date);
+        const effectiveProfessionalId = getEffectiveProfessionalFilterValue();
         const params = new URLSearchParams({
             start_date: state.agendaRange.start,
             end_date: state.agendaRange.end,
@@ -512,15 +543,24 @@
         if (options.force) {
             params.set("force", "1");
         }
-        if (els.professionalFilter.value) {
-            params.set("professionalId", els.professionalFilter.value);
+        if (isCurrentUserViewer() && !effectiveProfessionalId) {
+            state.appointments = [];
+            state.lastAgendaUpdatedAt = new Date();
+            updateAgendaModeUi();
+            updateAgendaLastUpdated();
+            els.agendaSummary.innerHTML = "";
+            els.agendaList.innerHTML = '<div class="empty-state">Seu usuario ainda nao esta vinculado a um profissional.</div>';
+            return;
+        }
+        if (effectiveProfessionalId) {
+            params.set("professionalId", effectiveProfessionalId);
         }
 
         renderAgendaLoading();
         try {
             const data = await apiFetch(`/api/agendamentos?${params.toString()}`);
             state.appointments = Array.isArray(data.agendamentos)
-                ? data.agendamentos.map(normalizeAppointment).sort(compareAppointments)
+                ? getVisibleAppointmentsForCurrentUser(data.agendamentos.map(normalizeAppointment)).sort(compareAppointments)
                 : [];
             state.lastAgendaUpdatedAt = new Date();
             renderAgenda();
@@ -590,16 +630,17 @@
 
     function getFilteredAppointments() {
         const statusFilter = els.agendaStatusFilter.value;
+        const appointments = getVisibleAppointmentsForCurrentUser(state.appointments);
         if (!statusFilter) {
-            return state.appointments;
+            return appointments;
         }
         if (statusFilter === "open") {
-            return state.appointments.filter((appointment) => isOpenStatus(appointment.status));
+            return appointments.filter((appointment) => isOpenStatus(appointment.status));
         }
         if (statusFilter === "cancelado") {
-            return state.appointments.filter((appointment) => ["cancelado_paciente", "cancelado_profissional"].includes(appointment.status));
+            return appointments.filter((appointment) => ["cancelado_paciente", "cancelado_profissional"].includes(appointment.status));
         }
-        return state.appointments.filter((appointment) => appointment.status === statusFilter);
+        return appointments.filter((appointment) => appointment.status === statusFilter);
     }
 
     function isOpenStatus(status) {
@@ -685,6 +726,11 @@
     }
 
     async function loadRoomsView(options = {}) {
+        if (isCurrentUserViewer()) {
+            els.roomsSummary.innerHTML = "";
+            els.roomsList.innerHTML = '<div class="empty-state">Salas disponiveis apenas para supervisores e administradores.</div>';
+            return;
+        }
         state.agendaRange = getAgendaRange(getSelectedAgendaDateValue());
         els.roomsRangeLabel.textContent = state.agendaRange.label;
         updateRoomsNavUi();
@@ -698,6 +744,7 @@
 
     async function loadRoomAppointments(options = {}) {
         const range = state.agendaRange || getAgendaRange(getSelectedAgendaDateValue());
+        const effectiveProfessionalId = getEffectiveProfessionalFilterValue();
         const params = new URLSearchParams({
             start_date: range.start,
             end_date: range.end,
@@ -706,11 +753,14 @@
         if (options.force) {
             params.set("force", "1");
         }
+        if (effectiveProfessionalId) {
+            params.set("professionalId", effectiveProfessionalId);
+        }
 
         try {
             const data = await apiFetch(`/api/agendamentos?${params.toString()}`);
             state.roomAppointments = Array.isArray(data.agendamentos)
-                ? data.agendamentos.map(normalizeAppointment).sort(compareAppointments)
+                ? getVisibleAppointmentsForCurrentUser(data.agendamentos.map(normalizeAppointment)).sort(compareAppointments)
                 : [];
             state.lastRoomsUpdatedAt = new Date();
             renderRooms();
@@ -816,10 +866,10 @@
         }
         try {
             const data = await apiFetch(`/api/remarques${suffix}`);
-            state.remarks = Array.isArray(data.remarques)
-                ? data.remarques.map(normalizeRemark)
-                : [];
             state.canAuthorizeRemarks = !!data.can_authorize;
+            state.remarks = Array.isArray(data.remarques)
+                ? getVisibleRemarksForCurrentUser(data.remarques.map(normalizeRemark))
+                : [];
             state.lastRemarksUpdatedAt = new Date();
             renderRemarks();
         } catch (err) {
@@ -833,7 +883,7 @@
         const filter = els.remarkStatusFilter.value;
         updateRemarkSummary();
         updateRemarkLastUpdated();
-        const remarks = state.remarks
+        const remarks = getVisibleRemarksForCurrentUser(state.remarks)
             .filter((remark) => !filter || remark.status === filter)
             .sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
 
@@ -875,9 +925,10 @@
 
     function updateRemarkSummary() {
         if (!els.remarkSummary) return;
-        const pending = state.remarks.filter((remark) => remark.status === "pendente").length;
-        const approved = state.remarks.filter((remark) => remark.status === "aprovado").length;
-        const rejected = state.remarks.filter((remark) => remark.status === "reprovado").length;
+        const visibleRemarks = getVisibleRemarksForCurrentUser(state.remarks);
+        const pending = visibleRemarks.filter((remark) => remark.status === "pendente").length;
+        const approved = visibleRemarks.filter((remark) => remark.status === "aprovado").length;
+        const rejected = visibleRemarks.filter((remark) => remark.status === "reprovado").length;
         els.remarkSummary.innerHTML = [
             summaryItem(pending, "Pendentes"),
             summaryItem(approved, "Aprovados"),
@@ -963,7 +1014,7 @@
 
     function canViewAppointmentAudit(appointment) {
         if (!state.user || !appointment) return false;
-        const level = String(state.user.level || "").toLowerCase();
+        const level = normalizeUserLevel(state.user.level);
         return level === "admin" || level === "editor" || hasFullAppointmentStatusAccess() || userOwnsAppointment(appointment);
     }
 
@@ -1234,6 +1285,7 @@
         return {
             id: String(remark.id || ""),
             appointmentId: String(remark.appointmentId || remark.agendamento_id || ""),
+            professionalId: String(remark.professionalId || remark.profissional_id || remark.professional_id || "").trim(),
             originalDate: normalizeDate(remark.originalDate || remark.original_data || ""),
             originalTime: normalizeTime(remark.originalTime || remark.original_hora_inicio || ""),
             originalEndTime: normalizeTime(remark.originalEndTime || remark.original_hora_fim || ""),
@@ -1245,6 +1297,7 @@
             requestedAt: remark.requestedAt || remark.solicitado_em || "",
             patientName: remark.patientName || remark.paciente_nome || "",
             requestedBy: remark.requestedBy || remark.solicitado_por || "",
+            requestedByUsername: remark.requestedByUsername || remark.solicitado_por_username || "",
             approvedBy: remark.approvedBy || remark.autorizado_por || "",
             rejectedBy: remark.rejectedBy || remark.rejeitado_por || "",
             rejectionReason: remark.rejectionReason || remark.motivo_reprovacao || "",
@@ -1306,13 +1359,74 @@
         return labels[status] || status || "Pendente";
     }
 
+    function normalizeUserLevel(level) {
+        const text = String(level || "").trim().toLowerCase();
+        const labels = {
+            "administrador": "admin",
+            "administrador principal": "admin",
+            "supervisor": "editor",
+            "supervisor/atm": "editor",
+            "supervisor / atm": "editor",
+            "profissional": "viewer",
+            "visualizador": "viewer"
+        };
+        return labels[text] || text || "viewer";
+    }
+
+    function getCurrentUserProfessionalId() {
+        return String(state.user && (state.user.professionalId || state.user.profissional_id) || "").trim();
+    }
+
+    function isCurrentUserViewer() {
+        return normalizeUserLevel(state.user && state.user.level) === "viewer";
+    }
+
+    function getEffectiveProfessionalFilterValue() {
+        if (isCurrentUserViewer()) {
+            return getCurrentUserProfessionalId();
+        }
+        return String(els.professionalFilter.value || "").trim();
+    }
+
+    function updateMobileAccessUi() {
+        const isViewer = isCurrentUserViewer();
+        const roomsButton = document.querySelector('[data-tab="rooms"]');
+        if (roomsButton) {
+            roomsButton.classList.toggle("hidden", isViewer);
+        }
+        if (isViewer && els.roomsTab && !els.roomsTab.classList.contains("hidden")) {
+            showTab("agenda");
+        }
+    }
+
+    function getVisibleAppointmentsForCurrentUser(appointments) {
+        const list = Array.isArray(appointments) ? appointments : [];
+        if (!isCurrentUserViewer()) return list;
+        return list.filter((appointment) => userOwnsAppointment(appointment));
+    }
+
+    function canCurrentUserViewRemark(remark) {
+        if (!isCurrentUserViewer() || state.canAuthorizeRemarks) return true;
+        const linked = getCurrentUserProfessionalId();
+        const username = String(state.user && state.user.username || "").trim().toLowerCase();
+        const remarkProfessional = String(remark && remark.professionalId || "").trim();
+        const requestedByUsername = String(remark && remark.requestedByUsername || "").trim().toLowerCase();
+        return (!!linked && remarkProfessional === linked) || (!!username && requestedByUsername === username);
+    }
+
+    function getVisibleRemarksForCurrentUser(remarks) {
+        const list = Array.isArray(remarks) ? remarks : [];
+        return list.filter((remark) => canCurrentUserViewRemark(remark));
+    }
+
     function hasFullAppointmentStatusAccess() {
         if (!state.user) return false;
+        const level = normalizeUserLevel(state.user.level);
         const text = `${state.user.level || ""} ${state.user.name || ""} ${state.user.username || ""}`
             .normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "")
             .toUpperCase();
-        if (state.user.level === "admin" || text.includes("ADMINISTRADOR")) return true;
+        if (level === "admin" || text.includes("ADMINISTRADOR")) return true;
         if (text.includes("CEO") || text.includes("ATAC") || text.includes("RECEP")) return true;
         const linked = String(state.user.professionalId || state.user.profissional_id || "");
         const professional = state.professionals.find((item) => String(item.id) === linked);
@@ -1330,9 +1444,10 @@
 
     function canUpdateAppointmentStatus(status, appointment) {
         if (hasFullAppointmentStatusAccess()) return true;
-        if (state.user && state.user.level === "editor") return true;
+        const level = normalizeUserLevel(state.user && state.user.level);
+        if (state.user && level === "editor") return true;
         return !!state.user
-            && state.user.level === "viewer"
+            && level === "viewer"
             && userOwnsAppointment(appointment)
             && PROFESSIONAL_STATUS_UPDATE_ALLOWED.has(normalizeStatus(status));
     }
@@ -1465,7 +1580,8 @@
             editor: "Supervisor / ATM",
             viewer: "Profissional"
         };
-        return labels[level] || level || "Usuario";
+        const normalized = normalizeUserLevel(level);
+        return labels[normalized] || level || "Usuario";
     }
 
     function escapeHtml(value) {

@@ -5501,9 +5501,9 @@ def criar_agendamento():
 
 @app.route('/api/agendamentos', methods=['GET'])
 def listar_agendamentos():
-    auth_check = require_authenticated()
-    if auth_check:
-        return auth_check
+    authenticated_user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
 
     conn = None
     cur = None
@@ -5513,6 +5513,17 @@ def listar_agendamentos():
         start_date = normalize_date_for_db(request.args.get('start_date') or request.args.get('from'))
         end_date = normalize_date_for_db(request.args.get('end_date') or request.args.get('to'))
         profissional_filter = request.args.get('profissional') or request.args.get('professional') or request.args.get('professionalId')
+        user_level = normalize_level(authenticated_user.get('level'))
+        user_profissional_id = authenticated_user.get('professionalId') or authenticated_user.get('profissional_id')
+
+        if user_level == 'viewer':
+            if user_profissional_id in (None, ''):
+                return jsonify({'success': True, 'agendamentos': []})
+            requested_profissional = str(profissional_filter or '').strip()
+            own_profissional = str(user_profissional_id).strip()
+            if requested_profissional and requested_profissional != own_profissional:
+                return jsonify({'success': False, 'error': 'Acesso negado para esta agenda'}), 403
+            profissional_filter = own_profissional
 
         if start_date:
             query_where.append('data::date >= %s')
@@ -7267,8 +7278,22 @@ def listar_remarques():
         can_authorize = user_can_authorize_remarque(cur, authenticated_user)
         can_manage_config = user_can_manage_remarque_config(cur, authenticated_user)
         requests_enabled = get_remarque_requests_enabled(cur)
+        remarque_filters = []
+        remarque_params = []
+        if normalize_level(authenticated_user.get('level')) == 'viewer' and not can_authorize:
+            viewer_filter_parts = []
+            user_profissional_id = authenticated_user.get('professionalId') or authenticated_user.get('profissional_id')
+            if user_profissional_id not in (None, ''):
+                viewer_filter_parts.append('r.profissional_id::text = %s')
+                remarque_params.append(str(user_profissional_id))
+            username = str(authenticated_user.get('username') or '').strip().lower()
+            if username:
+                viewer_filter_parts.append("lower(COALESCE(r.solicitado_por_username, '')) = %s")
+                remarque_params.append(username)
+            remarque_filters.append(f"({' OR '.join(viewer_filter_parts)})" if viewer_filter_parts else '1 = 0')
+        remarque_where_sql = f"WHERE {' AND '.join(remarque_filters)}" if remarque_filters else ''
 
-        cur.execute("""
+        cur.execute(f"""
             SELECT r.id, r.agendamento_id, r.profissional_id, r.original_data, r.original_hora_inicio, r.original_hora_fim,
                    r.nova_data, r.nova_hora_inicio, r.nova_hora_fim, r.inverter_horarios, r.conflito_agendamento_id,
                    r.conflito_nova_data, r.conflito_nova_hora_inicio, r.conflito_nova_hora_fim, r.conflito_realocacoes,
@@ -7287,9 +7312,10 @@ def listar_remarques():
                 ORDER BY p.criado_em DESC NULLS LAST
                 LIMIT 1
             ) paciente_info ON TRUE
+            {remarque_where_sql}
             ORDER BY r.solicitado_em DESC
             LIMIT 500
-        """)
+        """, tuple(remarque_params))
         rows = cur.fetchall()
         keys = [
             'id', 'agendamento_id', 'profissional_id', 'original_data', 'original_hora_inicio', 'original_hora_fim',
@@ -7509,22 +7535,37 @@ def criar_remarque():
         cur = conn.cursor()
         ensure_remarque_table_cached(cur)
         ensure_app_config_table(cur)
+        appointment_cols = get_table_columns_cached(cur, 'agendamentos')
         if not get_remarque_requests_enabled(cur):
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': 'Solicitacoes de remarque estao desativadas no momento'}), 403
 
+        appointment_select_fields = ['id', 'profissional', 'data', 'hora_inicio', 'hora_fim']
+        if 'profissional_id' in appointment_cols:
+            appointment_select_fields.insert(2, 'profissional_id')
         cur.execute(
-            'SELECT id, profissional, data, hora_inicio, hora_fim FROM agendamentos WHERE id = %s',
+            f"SELECT {', '.join(appointment_select_fields)} FROM agendamentos WHERE id = %s",
             (int(agendamento_id),)
         )
-        agendamento = cur.fetchone()
-        if not agendamento:
+        agendamento_row = cur.fetchone()
+        if not agendamento_row:
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': 'Agendamento nao encontrado'}), 404
+        agendamento = dict(zip(appointment_select_fields, agendamento_row))
+        if (
+            normalize_level(authenticated_user.get('level')) == 'viewer'
+            and not user_matches_appointment_professional(
+                authenticated_user.get('professionalId') or authenticated_user.get('profissional_id'),
+                agendamento
+            )
+        ):
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Sem permissao para solicitar remarque deste agendamento'}), 403
 
-        profissional_id = str(agendamento[1])
+        profissional_id = str(agendamento.get('profissional_id') or agendamento.get('profissional'))
         cur.execute("""
             SELECT id
             FROM remarque_solicitacoes
@@ -7539,16 +7580,20 @@ def criar_remarque():
             return jsonify({'success': False, 'error': 'A solicitacao de remarque deste agendamento ja foi solicitada e esta pendente'}), 409
 
         if conflito_agendamento_id:
+            conflict_select_fields = ['id', 'profissional']
+            if 'profissional_id' in appointment_cols:
+                conflict_select_fields.append('profissional_id')
             cur.execute(
-                'SELECT id, profissional FROM agendamentos WHERE id = %s',
+                f"SELECT {', '.join(conflict_select_fields)} FROM agendamentos WHERE id = %s",
                 (int(conflito_agendamento_id),)
             )
-            conflito = cur.fetchone()
-            if not conflito:
+            conflito_row = cur.fetchone()
+            if not conflito_row:
                 cur.close()
                 conn.close()
                 return jsonify({'success': False, 'error': 'Agendamento conflitante nao encontrado'}), 404
-            if str(conflito[1]) != profissional_id:
+            conflito = dict(zip(conflict_select_fields, conflito_row))
+            if str(conflito.get('profissional_id') or conflito.get('profissional')) != profissional_id:
                 cur.close()
                 conn.close()
                 return jsonify({'success': False, 'error': 'Agendamento conflitante pertence a outro profissional'}), 400
@@ -7609,16 +7654,19 @@ def criar_remarque():
                     conn.close()
                     return jsonify({'success': False, 'error': 'Primeira realocacao deve ser do agendamento conflitante'}), 400
                 relocation_placeholders = ','.join(['%s'] * len(relocation_ids))
+                relocation_select_fields = ['id', 'profissional']
+                if 'profissional_id' in appointment_cols:
+                    relocation_select_fields.append('profissional_id')
                 cur.execute(
-                    f"SELECT id, profissional FROM agendamentos WHERE id IN ({relocation_placeholders})",
+                    f"SELECT {', '.join(relocation_select_fields)} FROM agendamentos WHERE id IN ({relocation_placeholders})",
                     relocation_ids
                 )
-                relocation_rows = cur.fetchall()
+                relocation_rows = [dict(zip(relocation_select_fields, row)) for row in cur.fetchall()]
                 if len(relocation_rows) != len(set(relocation_ids)):
                     cur.close()
                     conn.close()
                     return jsonify({'success': False, 'error': 'Um dos agendamentos conflitantes nao foi encontrado'}), 404
-                if any(str(row[1]) != profissional_id for row in relocation_rows):
+                if any(str(row.get('profissional_id') or row.get('profissional')) != profissional_id for row in relocation_rows):
                     cur.close()
                     conn.close()
                     return jsonify({'success': False, 'error': 'Todos os conflitos devem ser do mesmo profissional'}), 400
@@ -7667,7 +7715,7 @@ def criar_remarque():
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
             RETURNING id
         """, (
-            int(agendamento_id), profissional_id, agendamento[2], agendamento[3], agendamento[4],
+            int(agendamento_id), profissional_id, agendamento.get('data'), agendamento.get('hora_inicio'), agendamento.get('hora_fim'),
             nova_data, nova_hora_inicio, nova_hora_fim, inverter_horarios,
             int(conflito_agendamento_id) if conflito_agendamento_id else None,
             conflito_nova_data_obj if conflito_nova_data_obj else None,
