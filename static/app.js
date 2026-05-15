@@ -317,11 +317,11 @@
 
             return new Promise(resolve => {
                 const overlay = document.createElement('div');
-                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4';
+                overlay.className = 'fixed inset-0 bg-slate-950 bg-opacity-50 flex items-center justify-center p-4';
                 overlay.style.zIndex = '100000';
 
                 const panel = document.createElement('div');
-                panel.className = 'bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4';
+                panel.className = 'bg-white rounded-lg border border-gray-200 shadow-2xl w-full max-w-lg p-6 space-y-4';
 
                 const titleEl = document.createElement('h3');
                 titleEl.className = 'text-lg font-bold text-gray-900';
@@ -3010,11 +3010,11 @@
         function showAuditPasswordPrompt(errorMessage = '') {
             return new Promise(resolve => {
                 const overlay = document.createElement('div');
-                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4';
+                overlay.className = 'fixed inset-0 bg-slate-950 bg-opacity-50 flex items-center justify-center p-4';
                 overlay.style.zIndex = '100000';
 
                 const panel = document.createElement('div');
-                panel.className = 'bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4';
+                panel.className = 'bg-white rounded-lg border border-gray-200 shadow-2xl w-full max-w-md p-6 space-y-4';
 
                 const title = document.createElement('h3');
                 title.className = 'text-lg font-bold text-gray-900';
