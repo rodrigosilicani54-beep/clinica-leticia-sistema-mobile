@@ -5876,10 +5876,13 @@
                 slot.onclick = null;
                 slot.className += ' occupied-slot';
                 slot.style.backgroundColor = '#fafafa';
-            } else {
+            } else if (checkPermission('create')) {
                 // Slot vazio - pode criar novo agendamento
                 slot.onclick = () => newAppointment(dateStr, time);
                 slot.style.cursor = 'pointer';
+            } else {
+                slot.onclick = null;
+                slot.style.cursor = 'default';
             }
             
             return slot;
@@ -5889,10 +5892,223 @@
         function handleAppointmentClick(appointmentId) {
             const appointment = appointments.find(a => a.id === appointmentId);
             if (appointment) {
-                editAppointment(appointment);
+                openAppointmentSummary(appointment);
             } else {
                 console.warn('[handleAppointmentClick] Appointment not found:', appointmentId);
             }
+        }
+
+        function canEditAppointmentScheduleData(appointment = null) {
+            return !!(currentUser && currentUser.level === 'admin' && checkPermission('edit'));
+        }
+
+        function canOpenAppointmentSummary(appointment) {
+            if (!appointment) return false;
+            if (canEditAppointmentScheduleData(appointment)) return true;
+            if (canUpdateAppointmentStatus(null, appointment)) return true;
+            return checkPermission('view') && (hasFullAppointmentStatusAccess() || currentUser?.level === 'editor' || userOwnsAppointment(appointment));
+        }
+
+        function getAppointmentSummaryPatientInfo(appointment) {
+            const patient = findPatientByAppointment(appointment);
+            const canSeePatientDetails = checkPermission('viewPatients') || hasFullAppointmentStatusAccess() || userOwnsAppointment(appointment);
+            if (!patient || !canSeePatientDetails) {
+                return {
+                    name: appointment.clientName || 'Paciente',
+                    insurance: '',
+                    phone: ''
+                };
+            }
+            return {
+                name: patient.nome || patient.name || appointment.clientName || 'Paciente',
+                insurance: patient.convenio || patient.insurance || patient.plano || '',
+                phone: patient.telefone || patient.phone || ''
+            };
+        }
+
+        function getAppointmentSummaryRemarkRows(appointment) {
+            const appointmentId = String(appointment?.id || '').trim();
+            if (!appointmentId || !Array.isArray(remarkRequests)) return [];
+            return remarkRequests
+                .filter(request =>
+                    String(request.status || '').trim().toLowerCase() === 'aprovado' &&
+                    isRemarkRequestRelatedToAppointment(request, appointmentId)
+                )
+                .sort((a, b) => new Date(b.approvedAt || b.requestedAt || 0) - new Date(a.approvedAt || a.requestedAt || 0));
+        }
+
+        function getAppointmentSummaryRemarkHtml(appointment) {
+            const requests = getAppointmentSummaryRemarkRows(appointment);
+            if (!requests.length) {
+                return isAppointmentRemarkApproved(appointment)
+                    ? '<div class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><strong>Remarque aprovado.</strong></div>'
+                    : '';
+            }
+            const appointmentId = String(appointment.id || '').trim();
+            const rowsHtml = requests.map(request => {
+                const relocations = normalizeRemarkRelocations(request.conflictRelocations || request.conflito_realocacoes);
+                const relocation = relocations.find(item =>
+                    String(item.appointmentId || item.agendamento_id || item.appointment_id || '').trim() === appointmentId
+                );
+                let title = 'Remarque principal';
+                let detail = `${formatDateBR(request.originalDate)} ${request.originalTime || ''} - ${request.originalEndTime || ''} para ${formatDateBR(request.newDate)} ${request.newTime || ''} - ${request.newEndTime || ''}`;
+                if (String(request.conflictAppointmentId || request.conflito_agendamento_id || '').trim() === appointmentId) {
+                    title = request.invertTimes ? 'Invertido no remarque' : 'Conflito realocado';
+                    const targetDate = request.invertTimes ? request.originalDate : request.conflictNewDate;
+                    const targetTime = request.invertTimes ? request.originalTime : request.conflictNewTime;
+                    const targetEnd = request.invertTimes ? request.originalEndTime : request.conflictNewEndTime;
+                    detail = `Destino: ${formatDateBR(targetDate)} ${targetTime || ''} - ${targetEnd || ''}`;
+                } else if (relocation) {
+                    title = 'Realocado por remarque';
+                    detail = `Destino: ${formatDateBR(relocation.newDate || relocation.nova_data)} ${relocation.newTime || relocation.nova_hora_inicio || ''} - ${relocation.newEndTime || relocation.nova_hora_fim || ''}`;
+                }
+                const decidedBy = request.approvedBy ? `<div class="mt-1 text-xs text-sky-700">Autorizado por ${escapeAuditHtml(request.approvedBy)}</div>` : '';
+                return `
+                    <div class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                        <div class="font-bold">${escapeAuditHtml(title)}</div>
+                        <div class="mt-1">${escapeAuditHtml(detail)}</div>
+                        ${decidedBy}
+                    </div>
+                `;
+            }).join('');
+            return `<div class="space-y-2">${rowsHtml}</div>`;
+        }
+
+        function renderAppointmentSummary(appointment) {
+            const modal = document.getElementById('appointmentSummaryModal');
+            const content = document.getElementById('appointmentSummaryContent');
+            const statusPanel = document.getElementById('appointmentSummaryStatusPanel');
+            const actionsPanel = document.getElementById('appointmentSummaryActionsPanel');
+            const editBtn = document.getElementById('appointmentSummaryEditBtn');
+            const actionsBtn = document.getElementById('appointmentSummaryActionsBtn');
+            const subtitle = document.getElementById('appointmentSummarySubtitle');
+            const hiddenId = document.getElementById('appointmentSummaryId');
+            if (!modal || !content || !statusPanel || !actionsPanel || !editBtn || !actionsBtn || !hiddenId) return;
+
+            const normalized = normalizeAppointmentRecord(appointment || {});
+            hiddenId.value = normalized.id || '';
+            const patientInfo = getAppointmentSummaryPatientInfo(normalized);
+            const status = normalizeScheduleStatus(normalized.status || 'agendado');
+            const statusClass = getStatusColor(status);
+            const roomName = getRoomName(normalized.roomId);
+            const modality = status === 'online' || !roomName ? 'Online' : 'Presencial';
+            const remarkHtml = getAppointmentSummaryRemarkHtml(normalized);
+            const lastActionHtml = normalized.lastAction
+                ? `<div class="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700"><strong>Ultima acao:</strong> ${escapeAuditHtml(normalized.lastAction.user || 'Sistema')} em ${new Date(normalized.lastAction.timestamp).toLocaleString('pt-BR')}</div>`
+                : '';
+
+            if (subtitle) {
+                subtitle.textContent = `${patientInfo.name || 'Paciente'} - ${formatDateBR(normalized.date)} ${formatAppointmentTime(normalized)}`;
+            }
+
+            content.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded border px-2 py-1 text-xs font-bold ${statusClass}">${escapeAuditHtml(getStatusLabel(status))}</span>
+                    ${isAppointmentRemarkApproved(normalized) ? '<span class="rounded bg-sky-700 px-2 py-1 text-xs font-bold text-white">Remarque</span>' : ''}
+                    ${status === 'online' ? '<span class="rounded bg-sky-100 px-2 py-1 text-xs font-bold text-sky-800">Online</span>' : ''}
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div class="rounded-lg border border-gray-200 bg-white p-3">
+                        <div class="text-xs font-bold uppercase text-gray-500">Paciente</div>
+                        <div class="mt-1 font-bold text-gray-900">${escapeAuditHtml(patientInfo.name || 'Paciente')}</div>
+                        <div class="mt-1 text-sm text-gray-600">${escapeAuditHtml(patientInfo.insurance || 'Convenio nao informado')}</div>
+                        <div class="text-sm text-gray-600">${escapeAuditHtml(patientInfo.phone || 'Telefone nao informado')}</div>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 bg-white p-3">
+                        <div class="text-xs font-bold uppercase text-gray-500">Agendamento</div>
+                        <div class="mt-1 font-bold text-gray-900">${escapeAuditHtml(formatDateBR(normalized.date))} ${escapeAuditHtml(formatAppointmentTime(normalized))}</div>
+                        <div class="mt-1 text-sm text-gray-600">${escapeAuditHtml(getProfessionalLabel(normalized.professionalId))}</div>
+                        <div class="text-sm text-gray-600">${escapeAuditHtml(getTypeLabel(normalized.type))}</div>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 bg-white p-3">
+                        <div class="text-xs font-bold uppercase text-gray-500">Local</div>
+                        <div class="mt-1 font-bold text-gray-900">${escapeAuditHtml(modality)}</div>
+                        <div class="mt-1 text-sm text-gray-600">${escapeAuditHtml(roomName || 'Sem sala')}</div>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 bg-white p-3">
+                        <div class="text-xs font-bold uppercase text-gray-500">Observacoes</div>
+                        <div class="mt-1 text-sm text-gray-700 whitespace-pre-line">${escapeAuditHtml(normalized.observations || 'Sem observacoes')}</div>
+                    </div>
+                </div>
+                ${remarkHtml}
+                ${lastActionHtml}
+            `;
+
+            const canManageStatus = canUpdateAppointmentStatus(null, normalized);
+            statusPanel.innerHTML = canManageStatus ? `
+                <div class="text-sm font-bold text-gray-900">Alterar status</div>
+                <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                    <select id="appointmentSummaryStatusSelect" class="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm">
+                        ${renderAppointmentStatusOptions(status, normalized)}
+                    </select>
+                    <button type="button" onclick="applyAppointmentStatusFromSelect('${escapeAuditHtml(String(normalized.id))}', 'appointmentSummaryStatusSelect')" class="rounded-lg bg-blue-700 px-4 py-3 text-sm font-medium text-white hover:bg-blue-800">
+                        Salvar status
+                    </button>
+                </div>
+            ` : `
+                <div class="text-sm text-gray-700">Voce pode visualizar este atendimento, mas nao pode alterar o status.</div>
+            `;
+
+            const isLockedByOther = status === 'cancelado_profissional' && normalized.lockedBy && currentUser && normalized.lockedBy !== currentUser.username;
+            const canUseRemark = remarkRequestsEnabled && !isLockedByOther;
+            actionsBtn.classList.toggle('hidden', !canUseRemark);
+            actionsPanel.classList.add('hidden');
+            actionsPanel.innerHTML = canUseRemark ? `
+                <div class="text-sm font-bold text-sky-950">Acoes</div>
+                <button type="button" onclick="openRemarkFromSummary('${escapeAuditHtml(String(normalized.id))}')" class="mt-3 w-full rounded-lg bg-sky-700 px-4 py-3 text-sm font-medium text-white hover:bg-sky-800">
+                    Solicitar remarque
+                </button>
+            ` : '';
+
+            editBtn.classList.toggle('hidden', !canEditAppointmentScheduleData(normalized));
+        }
+
+        function openAppointmentSummary(appointment) {
+            const normalized = normalizeAppointmentRecord(appointment || {});
+            if (!canOpenAppointmentSummary(normalized)) {
+                showPermissionDenied('view');
+                return;
+            }
+            renderAppointmentSummary(normalized);
+            document.getElementById('appointmentSummaryModal')?.classList.add('active');
+            Promise.allSettled([
+                fetchRemarkConfigFromServer({ force: true }),
+                fetchRemarkRequestsFromServer({ force: true })
+            ]).then(() => {
+                const currentId = document.getElementById('appointmentSummaryId')?.value;
+                const latest = getAppointmentById(currentId) || normalized;
+                if (String(currentId || '') === String(normalized.id || '')) {
+                    renderAppointmentSummary(latest);
+                }
+            });
+        }
+
+        function openAppointmentEditFromSummary() {
+            const appointmentId = document.getElementById('appointmentSummaryId')?.value;
+            const appointment = getAppointmentById(appointmentId);
+            if (!appointment || !canEditAppointmentScheduleData(appointment)) {
+                showPermissionDenied('edit');
+                return;
+            }
+            closeModal('appointmentSummaryModal');
+            editAppointment(appointment);
+        }
+
+        function toggleAppointmentSummaryActions() {
+            document.getElementById('appointmentSummaryActionsPanel')?.classList.toggle('hidden');
+        }
+
+        function openRemarkFromSummary(appointmentId) {
+            document.getElementById('appointmentSummaryActionsPanel')?.classList.add('hidden');
+            openRemarkRequestModal(appointmentId);
+        }
+
+        function refreshAppointmentSummaryIfOpen(appointmentId) {
+            const modal = document.getElementById('appointmentSummaryModal');
+            const currentId = document.getElementById('appointmentSummaryId')?.value;
+            if (!modal || !modal.classList.contains('active') || String(currentId || '') !== String(appointmentId || '')) return;
+            const latest = getAppointmentById(appointmentId);
+            if (latest) renderAppointmentSummary(latest);
         }
 
         function getScheduleTypeClass(type) {
@@ -6497,7 +6713,7 @@
         }
 
         function editAppointment(appointment) {
-            const canEditScheduleData = currentUser && currentUser.level === 'admin' && checkPermission('edit');
+            const canEditScheduleData = canEditAppointmentScheduleData(appointment);
             const canOpenOwnAppointment = currentUser && currentUser.level === 'viewer' && userOwnsAppointment(appointment);
             const canOpenForStatus = canUpdateAppointmentStatus(null, appointment);
             if (!canEditScheduleData && !canOpenOwnAppointment && !canOpenForStatus) {
@@ -6786,8 +7002,8 @@
             }).join('');
         }
 
-        function applyAppointmentStatusFromSelect(appointmentId) {
-            const select = document.getElementById('appointmentStatusSelect');
+        function applyAppointmentStatusFromSelect(appointmentId, selectId = 'appointmentStatusSelect') {
+            const select = document.getElementById(selectId);
             if (!select) return;
             if (!select.value) {
                 alert('Selecione um novo status permitido para este perfil.');
@@ -7764,6 +7980,7 @@
             
             // Update localStorage
             localStorage.setItem('appointments', JSON.stringify(appointments));
+            refreshAppointmentSummaryIfOpen(appointmentId);
             
             // Try to sync with server if it's a server appointment
             const numericId = Number(appointmentId);
@@ -7792,11 +8009,14 @@
                         appointment.lastAction = previousState.lastAction;
                         localStorage.setItem('appointments', JSON.stringify(appointments));
                         refreshActiveScheduleViews();
+                        refreshAppointmentSummaryIfOpen(appointmentId);
                         alert(`ðŸš« ${data?.error || 'Nao foi possivel atualizar o status no servidor.'}`);
                         return;
                     }
 
                     syncAppointmentsForAgendaView({ force: true });
+                    refreshAppointmentSummaryIfOpen(appointmentId);
+                    showSuccessMessage(`Status atualizado para ${getStatusLabel(newStatus)}`);
                     debugLog('Status atualizado no servidor:', data);
                 })
                 .catch(err => {
@@ -7805,6 +8025,7 @@
                     appointment.lastAction = previousState.lastAction;
                     localStorage.setItem('appointments', JSON.stringify(appointments));
                     refreshActiveScheduleViews();
+                    refreshAppointmentSummaryIfOpen(appointmentId);
                     console.warn('Falha ao atualizar status no servidor, alteracao local revertida:', err);
                     alert('ðŸš« Nao foi possivel confirmar a alteracao no servidor. O status foi restaurado.');
                 });
@@ -7812,6 +8033,7 @@
             
             // Refresh displays
             refreshActiveScheduleViews();
+            refreshAppointmentSummaryIfOpen(appointmentId);
             closeModal('scheduleModal');
             if (!Number.isNaN(numericId) && numericId > 0) {
                 return;

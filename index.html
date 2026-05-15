@@ -2212,6 +2212,40 @@
         </div>
     </div>
 
+    <!-- Appointment Summary Modal -->
+    <div id="appointmentSummaryModal" class="modal" style="z-index: 1080;">
+        <div class="bg-white rounded-lg p-5 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <input type="hidden" id="appointmentSummaryId">
+            <div class="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+                <div class="min-w-0">
+                    <h3 class="text-xl font-bold text-gray-900">Atendimento</h3>
+                    <p id="appointmentSummarySubtitle" class="mt-1 text-sm text-gray-500">Resumo do agendamento</p>
+                </div>
+                <button type="button" onclick="closeModal('appointmentSummaryModal')" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-50">
+                    Fechar
+                </button>
+            </div>
+
+            <div id="appointmentSummaryContent" class="mt-4 space-y-4"></div>
+
+            <div id="appointmentSummaryStatusPanel" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4"></div>
+
+            <div id="appointmentSummaryActionsPanel" class="mt-4 hidden rounded-lg border border-sky-100 bg-sky-50 p-4"></div>
+
+            <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" id="appointmentSummaryEditBtn" onclick="openAppointmentEditFromSummary()" class="hidden rounded-lg bg-blue-700 px-4 py-3 font-medium text-white hover:bg-blue-800">
+                    Editar agendamento
+                </button>
+                <button type="button" id="appointmentSummaryActionsBtn" onclick="toggleAppointmentSummaryActions()" class="hidden rounded-lg bg-sky-700 px-4 py-3 font-medium text-white hover:bg-sky-800">
+                    Acoes
+                </button>
+                <button type="button" onclick="closeModal('appointmentSummaryModal')" class="rounded-lg bg-gray-500 px-4 py-3 font-medium text-white hover:bg-gray-600">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Yes/No Confirmation Modal -->
     <div id="yesNoConfirmModal" class="modal" style="z-index: 1200;">
         <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
@@ -2595,7 +2629,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260514-remarque-badge-modal"></script>
+    <script src="static/app.js?v=20260515-appointment-summary"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
