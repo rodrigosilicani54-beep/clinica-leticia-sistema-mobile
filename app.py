@@ -5594,8 +5594,17 @@ def listar_agendamentos():
             select_fields.append('recorrencia_total')
         if include_remarque_flag:
             select_fields.append(
-                "EXISTS (SELECT 1 FROM remarque_solicitacoes rs "
-                "WHERE rs.agendamento_id = agendamentos.id AND rs.status = 'aprovado') AS remarque_aprovado"
+                "EXISTS ("
+                "SELECT 1 FROM remarque_solicitacoes rs "
+                "WHERE rs.status = 'aprovado' AND ("
+                "rs.agendamento_id = agendamentos.id "
+                "OR rs.conflito_agendamento_id = agendamentos.id "
+                "OR EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements(COALESCE(rs.conflito_realocacoes, '[]'::jsonb)) reloc "
+                "WHERE COALESCE(reloc->>'appointmentId', reloc->>'agendamento_id', reloc->>'appointment_id') = agendamentos.id::text"
+                ")"
+                ")"
+                ") AS remarque_aprovado"
             )
         
         select_fields.append('criado_em')

@@ -171,20 +171,43 @@
             };
         }
 
+        function normalizeRemarkRelocations(value) {
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string' && value.trim()) {
+                try {
+                    const parsed = JSON.parse(value);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (err) {
+                    return [];
+                }
+            }
+            return [];
+        }
+
+        function isRemarkRequestRelatedToAppointment(request, appointmentId) {
+            const targetId = String(appointmentId || '').trim();
+            if (!targetId || !request) return false;
+            if (String(request.appointmentId || request.agendamento_id || '').trim() === targetId) return true;
+            if (String(request.conflictAppointmentId || request.conflito_agendamento_id || '').trim() === targetId) return true;
+            return normalizeRemarkRelocations(request.conflictRelocations || request.conflito_realocacoes).some(relocation =>
+                String(relocation.appointmentId || relocation.agendamento_id || relocation.appointment_id || '').trim() === targetId
+            );
+        }
+
         function isAppointmentRemarkApproved(appointment) {
             if (!appointment) return false;
             if (parseBooleanFlag(appointment.remarqueAprovado ?? appointment.remarque_aprovado ?? appointment.remarkApproved ?? appointment.remarqueApproved)) {
                 return true;
             }
             const action = String(appointment.lastAction?.action || '').trim().toLowerCase();
-            if (['remarque_autorizado', 'remarque_aprovado'].includes(action)) {
+            if (['remarque_autorizado', 'remarque_aprovado', 'remarque_invertido', 'remarque_realocado'].includes(action)) {
                 return true;
             }
             const appointmentId = String(appointment.id || '').trim();
             if (!appointmentId || !Array.isArray(remarkRequests)) return false;
             return remarkRequests.some(request =>
-                String(request.appointmentId || request.agendamento_id || '').trim() === appointmentId &&
-                String(request.status || '').trim().toLowerCase() === 'aprovado'
+                String(request.status || '').trim().toLowerCase() === 'aprovado' &&
+                isRemarkRequestRelatedToAppointment(request, appointmentId)
             );
         }
 
@@ -11344,7 +11367,7 @@
                 conflictNewDate: item.conflictNewDate || item.conflito_nova_data || '',
                 conflictNewTime: item.conflictNewTime || item.conflito_nova_hora_inicio || '',
                 conflictNewEndTime: item.conflictNewEndTime || item.conflito_nova_hora_fim || '',
-                conflictRelocations: item.conflictRelocations || item.conflito_realocacoes || [],
+                conflictRelocations: normalizeRemarkRelocations(item.conflictRelocations || item.conflito_realocacoes || []),
                 reason: item.reason || item.observacao || '',
                 status: item.status || 'pendente',
                 requestedBy: item.requestedBy || item.solicitado_por || 'Sistema',
