@@ -109,6 +109,11 @@ label {
     text-align: center;
 }
 
+.compact-brand {
+    display: grid;
+    gap: 4px;
+}
+
 .brand-logo {
     width: min(42vw, 180px);
     height: auto;

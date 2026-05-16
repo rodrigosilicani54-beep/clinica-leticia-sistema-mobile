@@ -55,6 +55,8 @@
     function cacheElements() {
         [
             "loginView", "appView", "loginForm", "loginMessage", "usernameInput", "passwordInput",
+            "passwordChangeForm", "changeCurrentPasswordInput", "changeNewPasswordInput", "changeConfirmPasswordInput",
+            "changePasswordSubmitButton", "changePasswordLogoutButton", "passwordChangeMessage",
             "logoutButton", "userSummary", "agendaDateInput", "professionalFilter",
             "agendaStatusFilter", "refreshAgendaButton", "previousDayButton", "todayAgendaButton", "weekAgendaButton",
             "nextDayButton", "agendaRangeLabel", "agendaLastUpdated", "agendaSummary", "agendaList", "remarkStatusFilter",
@@ -75,6 +77,8 @@
 
     function wireEvents() {
         els.loginForm.addEventListener("submit", handleLogin);
+        els.passwordChangeForm.addEventListener("submit", handlePasswordChangeSubmit);
+        els.changePasswordLogoutButton.addEventListener("click", handleLogout);
         els.logoutButton.addEventListener("click", handleLogout);
         els.refreshAgendaButton.addEventListener("click", () => loadAgenda({ force: true }));
         els.refreshRemarksButton.addEventListener("click", () => loadRemarks({ force: true }));
@@ -350,6 +354,10 @@
             const data = await apiFetch("/api/me");
             if (data.success) {
                 state.user = data.user;
+                if (userMustChangePassword()) {
+                    showPasswordChange();
+                    return;
+                }
                 await enterApp();
                 return;
             }
@@ -386,11 +394,63 @@
             state.authHeader = `Bearer ${username}:${password}`;
             sessionStorage.setItem("mobileAuthHeader", state.authHeader);
             els.passwordInput.value = "";
+            if (userMustChangePassword()) {
+                showPasswordChange();
+                return;
+            }
             await enterApp();
         } catch (err) {
             setLoginMessage(err.message || "Falha no login.", true);
         } finally {
             setBusy(els.loginForm, false);
+        }
+    }
+
+    async function handlePasswordChangeSubmit(event) {
+        event.preventDefault();
+        const currentPassword = els.changeCurrentPasswordInput.value;
+        const newPassword = els.changeNewPasswordInput.value;
+        const confirmPassword = els.changeConfirmPasswordInput.value;
+        if (newPassword.length < 6) {
+            setPasswordChangeMessage("A nova senha precisa ter pelo menos 6 caracteres.", true);
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setPasswordChangeMessage("A confirmacao da senha nao confere.", true);
+            return;
+        }
+        if (newPassword === "000000") {
+            setPasswordChangeMessage("Escolha uma senha diferente da senha padrao.", true);
+            return;
+        }
+
+        setBusy(els.passwordChangeForm, true);
+        setPasswordChangeMessage("Salvando senha...");
+        try {
+            const data = await apiFetch("/api/me/password", {
+                method: "PUT",
+                body: {
+                    currentPassword,
+                    newPassword,
+                    confirmPassword
+                }
+            });
+            if (!data.success) {
+                throw new Error(data.error || "Nao foi possivel alterar a senha.");
+            }
+            state.user = data.user;
+            const username = state.user && state.user.username ? state.user.username : els.usernameInput.value.trim();
+            state.authHeader = `Bearer ${username}:${newPassword}`;
+            sessionStorage.setItem("mobileAuthHeader", state.authHeader);
+            els.changeCurrentPasswordInput.value = "";
+            els.changeNewPasswordInput.value = "";
+            els.changeConfirmPasswordInput.value = "";
+            setPasswordChangeMessage("Senha alterada.", false, true);
+            await enterApp();
+        } catch (err) {
+            setPasswordChangeMessage(err.message || "Nao foi possivel alterar a senha.", true);
+        } finally {
+            setBusy(els.passwordChangeForm, false);
         }
     }
 
@@ -425,12 +485,29 @@
     function showLogin() {
         els.loginView.classList.remove("hidden");
         els.appView.classList.add("hidden");
+        els.loginForm.classList.remove("hidden");
+        els.passwordChangeForm.classList.add("hidden");
+        setPasswordChangeMessage("");
     }
 
     function showApp() {
         els.loginView.classList.add("hidden");
         els.appView.classList.remove("hidden");
         setLoginMessage("");
+        setPasswordChangeMessage("");
+    }
+
+    function showPasswordChange() {
+        els.loginView.classList.remove("hidden");
+        els.appView.classList.add("hidden");
+        els.loginForm.classList.add("hidden");
+        els.passwordChangeForm.classList.remove("hidden");
+        setLoginMessage("");
+        setPasswordChangeMessage("");
+        els.changeCurrentPasswordInput.value = "";
+        els.changeNewPasswordInput.value = "";
+        els.changeConfirmPasswordInput.value = "";
+        setTimeout(() => els.changeCurrentPasswordInput.focus(), 0);
     }
 
     function showTab(tabName) {
@@ -1377,6 +1454,10 @@
         return String(state.user && (state.user.professionalId || state.user.profissional_id) || "").trim();
     }
 
+    function userMustChangePassword() {
+        return !!(state.user && (state.user.mustChangePassword || state.user.must_change_password));
+    }
+
     function isCurrentUserViewer() {
         return normalizeUserLevel(state.user && state.user.level) === "viewer";
     }
@@ -1554,6 +1635,12 @@
         els.loginMessage.textContent = message || "";
         els.loginMessage.classList.toggle("error", !!isError);
         els.loginMessage.classList.toggle("success", false);
+    }
+
+    function setPasswordChangeMessage(message, isError, isSuccess) {
+        els.passwordChangeMessage.textContent = message || "";
+        els.passwordChangeMessage.classList.toggle("error", !!isError);
+        els.passwordChangeMessage.classList.toggle("success", !!isSuccess);
     }
 
     function setApiConfigMessage(message, isError, isSuccess) {

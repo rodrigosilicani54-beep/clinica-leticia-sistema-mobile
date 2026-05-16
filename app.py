@@ -75,6 +75,7 @@ BASE_DIR = get_base_path()
 APP_HOST = os.environ.get('CLINICA_FLASK_HOST', '0.0.0.0')
 APP_PORT = int(os.environ.get('CLINICA_FLASK_PORT') or os.environ.get('PORT') or '5000')
 AUDIT_ACCESS_TTL_SECONDS = int(os.environ.get('AUDITORIA_TTL_SECONDS') or '900')
+DEFAULT_TEMPORARY_PASSWORD = os.environ.get('SENHA_PADRAO_USUARIO') or os.environ.get('DEFAULT_TEMPORARY_PASSWORD') or '000000'
 
 
 def get_runtime_config_paths():
@@ -402,7 +403,11 @@ def upgrade_plain_password_if_needed(cur, username, stored_password, provided_pa
     return True
 
 
-def sanitize_user_for_client(username, name, level, profissional_id=None, preferences=None):
+def is_temporary_password_value(value):
+    return hmac.compare_digest(str(value or ''), str(DEFAULT_TEMPORARY_PASSWORD or ''))
+
+
+def sanitize_user_for_client(username, name, level, profissional_id=None, preferences=None, must_change_password=False):
     normalized_preferences = normalize_user_preferences(preferences, level)
     effective_permissions = get_effective_user_permissions(level, normalized_preferences)
     user = {
@@ -411,7 +416,9 @@ def sanitize_user_for_client(username, name, level, profissional_id=None, prefer
         'level': normalize_level(level),
         'preferences': normalized_preferences,
         'effectivePermissions': effective_permissions,
-        'permissions': effective_permissions
+        'permissions': effective_permissions,
+        'mustChangePassword': bool(must_change_password),
+        'must_change_password': bool(must_change_password)
     }
     if profissional_id is not None:
         user['professionalId'] = profissional_id
@@ -482,37 +489,44 @@ def authenticate_credentials(username, password):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        try:
-            cur.execute(
-                'SELECT username, name, level, password, is_active, profissional_id FROM usuarios WHERE lower(username) = %s',
-                (username.lower(),)
-            )
-            row = cur.fetchone()
-            has_profissional_id = True
-        except Exception:
-            conn.rollback()
-            cur.execute(
-                'SELECT username, name, level, password, is_active FROM usuarios WHERE lower(username) = %s',
-                (username.lower(),)
-            )
-            row = cur.fetchone()
-            has_profissional_id = False
+        user_cols = ensure_usuarios_audit_columns(cur)
+        select_fields = ['username', 'name', 'level', 'password', 'is_active']
+        if 'profissional_id' in user_cols:
+            select_fields.append('profissional_id')
+        if 'must_change_password' in user_cols:
+            select_fields.append('must_change_password')
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s",
+            (username.lower(),)
+        )
+        row = cur.fetchone()
 
         if not row:
             return None, (jsonify({'success': False, 'error': 'Usuario nao encontrado'}), 403)
 
-        db_username, db_name, db_level, db_password, db_active = row[:5]
-        profissional_id = row[5] if has_profissional_id else None
+        row_data = dict(zip(select_fields, row))
+        db_username = row_data.get('username')
+        db_name = row_data.get('name')
+        db_level = row_data.get('level')
+        db_password = row_data.get('password')
+        db_active = row_data.get('is_active')
+        profissional_id = row_data.get('profissional_id')
         if db_active is False:
             return None, (jsonify({'success': False, 'error': 'Usuario inativo'}), 403)
         if not verify_password_value(db_password, password):
             return None, (jsonify({'success': False, 'error': 'Credenciais invalidas'}), 401)
 
         upgrade_plain_password_if_needed(cur, db_username, db_password, password)
+        must_change_password = bool(row_data.get('must_change_password')) or is_temporary_password_value(password)
+        if must_change_password and 'must_change_password' in user_cols and not row_data.get('must_change_password'):
+            cur.execute(
+                'UPDATE usuarios SET must_change_password = TRUE WHERE lower(username) = %s',
+                (str(db_username or '').lower(),)
+            )
         preferences = get_user_preferences(cur, db_username, db_level)
         conn.commit()
 
-        user = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences)
+        user = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences, must_change_password)
         return user, None
     except Exception as e:
         print('Erro ao autenticar credenciais:', e)
@@ -551,21 +565,17 @@ def get_authenticated_user():
         try:
             conn = get_connection()
             cur = conn.cursor()
-            try:
-                cur.execute(
-                    'SELECT username, name, level, is_active, profissional_id FROM usuarios WHERE lower(username) = %s',
-                    (username.lower(),)
-                )
-                row = cur.fetchone()
-                has_profissional_id = True
-            except Exception:
-                conn.rollback()
-                cur.execute(
-                    'SELECT username, name, level, is_active FROM usuarios WHERE lower(username) = %s',
-                    (username.lower(),)
-                )
-                row = cur.fetchone()
-                has_profissional_id = False
+            user_cols = ensure_usuarios_audit_columns(cur)
+            select_fields = ['username', 'name', 'level', 'is_active']
+            if 'profissional_id' in user_cols:
+                select_fields.append('profissional_id')
+            if 'must_change_password' in user_cols:
+                select_fields.append('must_change_password')
+            cur.execute(
+                f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s",
+                (username.lower(),)
+            )
+            row = cur.fetchone()
         except Exception as e:
             print('Erro ao buscar usuario autenticado via sessao:', e)
             return None, (jsonify({'success': False, 'error': 'Erro interno ao verificar sessao'}), 500)
@@ -581,8 +591,13 @@ def get_authenticated_user():
         if not row:
             return None, (jsonify({'success': False, 'error': 'Usuario da sessao nao encontrado'}), 403)
 
-        db_username, db_name, db_level, db_active = row[:4]
-        profissional_id = row[4] if has_profissional_id else None
+        row_data = dict(zip(select_fields, row))
+        db_username = row_data.get('username')
+        db_name = row_data.get('name')
+        db_level = row_data.get('level')
+        db_active = row_data.get('is_active')
+        profissional_id = row_data.get('profissional_id')
+        must_change_password = bool(row_data.get('must_change_password'))
         if db_active is False:
             return None, (jsonify({'success': False, 'error': 'Usuario inativo'}), 403)
 
@@ -605,7 +620,7 @@ def get_authenticated_user():
             except Exception:
                 pass
 
-        authenticated = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences)
+        authenticated = sanitize_user_for_client(db_username, db_name, db_level, profissional_id, preferences, must_change_password)
         set_auth_user_cache(cache_key, authenticated)
         return authenticated, None
 
@@ -2002,6 +2017,10 @@ def ensure_usuarios_audit_columns(cur):
         cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_user_agent TEXT")
         user_cols.add('ultimo_login_user_agent')
         changed = True
+    if 'must_change_password' not in user_cols:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE")
+        user_cols.add('must_change_password')
+        changed = True
     if changed:
         with TABLE_COLUMNS_CACHE_LOCK:
             TABLE_COLUMNS_CACHE['usuarios'] = user_cols
@@ -2615,7 +2634,7 @@ def criar_usuario():
 
     username = data.get("username") or data.get('email')
     name = data.get("name") or data.get('nome')
-    password = data.get('password') or data.get('senha')
+    password = data.get('password') or data.get('senha') or DEFAULT_TEMPORARY_PASSWORD
     level = data.get('level') or data.get('nivel') or 'viewer'
     level = normalize_level(level)
     notes = data.get("notes", "")
@@ -2631,6 +2650,8 @@ def criar_usuario():
     try:
         conn = get_connection()
         cur = conn.cursor()
+        user_cols = ensure_usuarios_audit_columns(cur)
+        must_change_password = bool(data.get('must_change_password') or data.get('mustChangePassword')) or is_temporary_password_value(password)
 
         columns = [
             'username',
@@ -2650,6 +2671,10 @@ def criar_usuario():
             current_user,
             True
         ]
+
+        if 'must_change_password' in user_cols:
+            columns.append('must_change_password')
+            values.append(must_change_password)
 
         if profissional_id not in (None, ''):
             columns.insert(5, 'profissional_id')
@@ -2681,6 +2706,7 @@ def criar_usuario():
                 'level': level,
                 'profissional_id': profissional_id,
                 'is_active': True,
+                'must_change_password': must_change_password,
                 'preferences': saved_preferences
             }
         )
@@ -2727,6 +2753,8 @@ def listar_usuarios():
             select_fields.append('ultimo_login_ip')
         if 'is_active' in user_cols:
             select_fields.append('is_active')
+        if 'must_change_password' in user_cols:
+            select_fields.append('must_change_password')
 
         cur.execute(
             f"SELECT {', '.join(select_fields)} FROM usuarios ORDER BY created_at DESC NULLS LAST LIMIT 100"
@@ -2748,7 +2776,9 @@ def listar_usuarios():
                 'ultimo_login_em': last_login.isoformat() if hasattr(last_login, 'isoformat') else last_login,
                 'ultimo_login_ip': item.get('ultimo_login_ip'),
                 'is_active': item.get('is_active', True),
-                'isActive': item.get('is_active', True)
+                'isActive': item.get('is_active', True),
+                'must_change_password': bool(item.get('must_change_password')),
+                'mustChangePassword': bool(item.get('must_change_password'))
             }
             if 'profissional_id' in item:
                 user_obj['professionalId'] = item.get('profissional_id')
@@ -2891,7 +2921,8 @@ def update_authenticated_user_preferences():
             user.get('name'),
             user.get('level'),
             user.get('professionalId') or user.get('profissional_id'),
-            saved_preferences
+            saved_preferences,
+            user.get('mustChangePassword') or user.get('must_change_password')
         )
         return jsonify({
             'success': True,
@@ -2901,6 +2932,107 @@ def update_authenticated_user_preferences():
         })
     except Exception as e:
         print('Erro ao atualizar preferencias visuais do usuario:', e)
+        try:
+            if conn:
+                conn.rollback()
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/me/password', methods=['PUT'])
+def update_authenticated_user_password():
+    user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
+
+    data = request.json or {}
+    current_password = data.get('current_password') or data.get('currentPassword') or data.get('senha_atual') or ''
+    new_password = data.get('new_password') or data.get('newPassword') or data.get('password') or data.get('senha') or ''
+    confirm_password = data.get('confirm_password') or data.get('confirmPassword') or data.get('confirmacao') or new_password
+
+    if not current_password:
+        return jsonify({'success': False, 'error': 'Informe a senha atual'}), 400
+    if not new_password or len(str(new_password)) < 6:
+        return jsonify({'success': False, 'error': 'A nova senha precisa ter pelo menos 6 caracteres'}), 400
+    if str(new_password) != str(confirm_password):
+        return jsonify({'success': False, 'error': 'A confirmacao da senha nao confere'}), 400
+    if is_temporary_password_value(new_password):
+        return jsonify({'success': False, 'error': 'Escolha uma senha diferente da senha padrao'}), 400
+
+    conn = None
+    cur = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        user_cols = ensure_usuarios_audit_columns(cur)
+        select_fields = ['username', 'name', 'level', 'password', 'is_active']
+        if 'profissional_id' in user_cols:
+            select_fields.append('profissional_id')
+        cur.execute(
+            f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
+            (str(user.get('username') or '').lower(),)
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Usuario nao encontrado'}), 404
+
+        row_data = dict(zip(select_fields, row))
+        if row_data.get('is_active') is False:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Usuario inativo'}), 403
+        if not verify_password_value(row_data.get('password'), current_password):
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Senha atual incorreta'}), 401
+
+        cur.execute(
+            """
+            UPDATE usuarios
+            SET password = %s,
+                must_change_password = FALSE
+            WHERE lower(username) = %s
+            """,
+            (hash_password(new_password), str(user.get('username') or '').lower())
+        )
+        preferences = get_user_preferences(cur, row_data.get('username'), row_data.get('level'))
+        updated_user = sanitize_user_for_client(
+            row_data.get('username'),
+            row_data.get('name'),
+            row_data.get('level'),
+            row_data.get('profissional_id'),
+            preferences,
+            False
+        )
+        insert_audit_log(
+            cur,
+            'senha_alterada',
+            'usuario',
+            entidade_id=row_data.get('username'),
+            entidade_rotulo=row_data.get('name') or row_data.get('username'),
+            actor=updated_user,
+            detalhes={'origem': 'troca_obrigatoria' if user.get('mustChangePassword') or user.get('must_change_password') else 'usuario'}
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        invalidate_auth_user_cache(user.get('username'))
+
+        session['current_user'] = {
+            'username': updated_user['username'],
+            'level': updated_user['level'],
+            'name': updated_user.get('name')
+        }
+        return jsonify({'success': True, 'user': updated_user})
+    except Exception as e:
+        print('Erro ao atualizar senha do usuario:', e)
         try:
             if conn:
                 conn.rollback()
@@ -3180,6 +3312,8 @@ def atualizar_usuario(username):
         select_fields = ['username', 'name', 'level', 'is_active']
         if 'profissional_id' in user_cols:
             select_fields.append('profissional_id')
+        if 'must_change_password' in user_cols:
+            select_fields.append('must_change_password')
         cur.execute(
             f"SELECT {', '.join(select_fields)} FROM usuarios WHERE lower(username) = %s LIMIT 1",
             (str(username or '').lower(),)
@@ -3202,6 +3336,9 @@ def atualizar_usuario(username):
         if password:
             fields.append('password = %s')
             values.append(hash_password(password))
+            if 'must_change_password' in user_cols:
+                fields.append('must_change_password = %s')
+                values.append(is_temporary_password_value(password))
         if level is not None:
             level = normalize_level(level)
             fields.append('level = %s')

@@ -254,6 +254,20 @@
             }
         }
 
+        function syncModalScrollLock() {
+            const hasActiveModal = Array.from(document.querySelectorAll('.modal')).some(modal => modal.classList.contains('active'));
+            document.documentElement.classList.toggle('modal-scroll-locked', hasActiveModal);
+            document.body.classList.toggle('modal-scroll-locked', hasActiveModal);
+        }
+
+        function setupModalScrollLock() {
+            document.querySelectorAll('.modal').forEach(modal => {
+                const observer = new MutationObserver(syncModalScrollLock);
+                observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+            });
+            syncModalScrollLock();
+        }
+
         function hasPendingAppointmentSync() {
             return appointments.some(apt => apt && apt.syncStatus === 'pending');
         }
@@ -1127,6 +1141,7 @@
 
         // Initialize the system
         document.addEventListener('DOMContentLoaded', function() {
+            setupModalScrollLock();
             organizeActionCenter();
             updateHomeClock();
             setInterval(updateHomeClock, 1000);
@@ -1299,6 +1314,7 @@
                 username,
                 level,
                 name: user.name || username,
+                mustChangePassword: parseBooleanFlag(user.mustChangePassword ?? user.must_change_password),
                 preferences: preferencesPayload,
                 effectivePermissions: buildEffectiveUserPermissions(level, preferencesPayload)
             };
@@ -1316,6 +1332,99 @@
             localStorage.setItem('currentUser', JSON.stringify(currentUser));
             renderActionCenterLayout();
             return currentUser;
+        }
+
+        function finishAuthenticatedEntry(showWelcome = true) {
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('loginModal').classList.remove('active');
+            document.getElementById('forcePasswordChangeModal')?.classList.remove('active');
+            initializeSystem();
+            if (showWelcome) {
+                showWelcomeMessage();
+            }
+        }
+
+        function showForcedPasswordChangeModal() {
+            document.getElementById('loginModal')?.classList.remove('active');
+            document.querySelectorAll('.modal').forEach(modal => {
+                if (modal.id !== 'forcePasswordChangeModal') {
+                    modal.classList.remove('active');
+                }
+            });
+            const message = document.getElementById('forcePasswordMessage');
+            if (message) {
+                message.className = 'mt-4 hidden rounded-lg p-3 text-sm';
+                message.textContent = '';
+            }
+            ['forceCurrentPassword', 'forceNewPassword', 'forceConfirmPassword'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) input.value = '';
+            });
+            const modal = document.getElementById('forcePasswordChangeModal');
+            if (modal) {
+                modal.classList.add('active');
+                setTimeout(() => document.getElementById('forceCurrentPassword')?.focus(), 0);
+            }
+        }
+
+        function setForcedPasswordMessage(message, isError = false) {
+            const el = document.getElementById('forcePasswordMessage');
+            if (!el) return;
+            el.textContent = message || '';
+            el.className = `mt-4 rounded-lg p-3 text-sm ${isError ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}${message ? '' : ' hidden'}`;
+        }
+
+        function submitForcedPasswordChange(event) {
+            event.preventDefault();
+            const currentPassword = document.getElementById('forceCurrentPassword').value;
+            const newPassword = document.getElementById('forceNewPassword').value;
+            const confirmPassword = document.getElementById('forceConfirmPassword').value;
+            const submitBtn = document.getElementById('forcePasswordSubmitBtn');
+
+            if (newPassword.length < 6) {
+                setForcedPasswordMessage('A nova senha precisa ter pelo menos 6 caracteres.', true);
+                return;
+            }
+            if (newPassword !== confirmPassword) {
+                setForcedPasswordMessage('A confirmacao da senha nao confere.', true);
+                return;
+            }
+            if (newPassword === '000000') {
+                setForcedPasswordMessage('Escolha uma senha diferente da senha padrao.', true);
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Salvando...';
+            setForcedPasswordMessage('');
+            fetch(apiUrl('/api/me/password'), {
+                method: 'PUT',
+                headers: getAuthenticatedHeaders(true),
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    currentPassword,
+                    newPassword,
+                    confirmPassword
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data || !data.success) {
+                    throw new Error(data && data.error ? data.error : 'Nao foi possivel alterar a senha.');
+                }
+                applyAuthenticatedUser(data.user);
+                currentUser.mustChangePassword = false;
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                setForcedPasswordMessage('Senha alterada com sucesso.');
+                finishAuthenticatedEntry(true);
+            })
+            .catch(err => {
+                setForcedPasswordMessage(err.message || 'Nao foi possivel alterar a senha.', true);
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Salvar nova senha';
+            });
         }
 
         function showLoginModal() {
@@ -1355,6 +1464,10 @@
                     if (data && data.success && data.user) {
                         applyAuthenticatedUser(data.user);
                         fetchUsersFromServer();
+                        if (currentUser.mustChangePassword) {
+                            showForcedPasswordChangeModal();
+                            return;
+                        }
                         initializeSystem();
                         return;
                     }
@@ -1381,10 +1494,11 @@
                 if (data && data.success && data.user) {
                     applyAuthenticatedUser(data.user);
                     fetchUsersFromServer();
-                    document.getElementById('loginPassword').value = '';
-                    document.getElementById('loginModal').classList.remove('active');
-                    initializeSystem();
-                    showWelcomeMessage();
+                    if (currentUser.mustChangePassword) {
+                        showForcedPasswordChangeModal();
+                        return;
+                    }
+                    finishAuthenticatedEntry(true);
                     return;
                 }
 
@@ -1424,8 +1538,8 @@
             }, 500);
         }
 
-        function logout() {
-            if (confirm('🚪 Deseja realmente sair do sistema?')) {
+        function logout(askConfirmation = true) {
+            if (!askConfirmation || confirm('🚪 Deseja realmente sair do sistema?')) {
                 fetch(apiUrl('/api/logout'), { method: 'POST' }).catch(() => {});
                 // Clear user session
                 localStorage.removeItem('currentUser');
@@ -2166,7 +2280,7 @@
 
             const username = document.getElementById('newUsername').value.toLowerCase().trim();
             const name = document.getElementById('newUserName').value.trim();
-            const password = document.getElementById('newUserPassword').value;
+            const password = document.getElementById('newUserPassword').value || '000000';
             const level = document.getElementById('newUserLevel').value;
             const notes = document.getElementById('newUserNotes').value.trim();
             const profissional_id = document.getElementById('newUserProfessional').value || null;
@@ -2198,7 +2312,8 @@
                 createdBy: currentUser.username,
                 createdAt: new Date().toISOString(),
                 lastLogin: null,
-                isActive: true
+                isActive: true,
+                mustChangePassword: password === '000000'
             };
 
             fetch(apiUrl('/api/usuarios'), {
@@ -2239,7 +2354,7 @@
         function clearNewUserForm() {
             document.getElementById('newUserName').value = '';
             document.getElementById('newUsername').value = '';
-            document.getElementById('newUserPassword').value = '';
+            document.getElementById('newUserPassword').value = '000000';
             document.getElementById('newUserLevel').value = '';
             document.getElementById('newUserProfessional').value = '';
             document.getElementById('newUserNotes').value = '';
@@ -2262,6 +2377,7 @@
                             const userPreferences = getUserPreferencesForStorage(userLevel, u.preferences || u.preferencias || {
                                 permissions: u.effectivePermissions || u.permissions
                             });
+                            const mustChangePassword = parseBooleanFlag(u.mustChangePassword ?? u.must_change_password);
                             // Only merge non-sensitive metadata from the server
                             if (!users[username]) {
                                 users[username] = {
@@ -2275,7 +2391,8 @@
                                     lastLogin: u.last_login || u.ultimo_login_em || null,
                                     lastLoginIp: u.ultimo_login_ip || null,
                                     isDefault: false,
-                                    isActive: u.isActive !== undefined ? u.isActive : (u.is_active !== undefined ? u.is_active : true)
+                                    isActive: u.isActive !== undefined ? u.isActive : (u.is_active !== undefined ? u.is_active : true),
+                                    mustChangePassword
                                 };
                                 changed = true;
                             } else {
@@ -2290,6 +2407,7 @@
                                 if (u.isActive !== undefined || u.is_active !== undefined) {
                                     users[username].isActive = u.isActive !== undefined ? u.isActive : u.is_active;
                                 }
+                                users[username].mustChangePassword = mustChangePassword;
                                 if ((u.professionalId || u.profissional_id) && !users[username].professionalId) {
                                     users[username].professionalId = u.professionalId || u.profissional_id;
                                 }
@@ -2521,6 +2639,9 @@
             users[username].preferences = preferencesPayload;
             users[username].permissions = buildEffectiveUserPermissions(level, preferencesPayload);
             users[username].notes = notes;
+            if (newPassword) {
+                users[username].mustChangePassword = newPassword === '000000';
+            }
             
             if (username === currentUser.username) {
                 currentUser.professionalId = professionalId;
@@ -11397,6 +11518,7 @@
         // Modal Management
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
+            setTimeout(syncModalScrollLock, 0);
         }
 
         function switchAppointmentTab(tabName) {

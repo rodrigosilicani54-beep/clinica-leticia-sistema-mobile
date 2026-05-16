@@ -140,6 +140,10 @@
             font-weight: 600;
             text-align: center;
         }
+        .password-change-card {
+            border: 1px solid #dbeafe;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+        }
         .blocked-slot {
             background: repeating-linear-gradient(
                 45deg,
@@ -170,6 +174,11 @@
             background: rgba(15, 23, 42, 0.54);
             backdrop-filter: blur(2px);
             z-index: 1000;
+            overscroll-behavior: contain;
+        }
+        html.modal-scroll-locked,
+        body.modal-scroll-locked {
+            overflow: hidden;
         }
         .modal.active {
             display: flex;
@@ -183,6 +192,7 @@
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+            overscroll-behavior: contain;
         }
         .modal > div::-webkit-scrollbar {
             width: 10px;
@@ -2446,10 +2456,11 @@
                     </div>
                     
                     <div>
-                        <label class="block text-sm font-medium mb-2">🔒 Senha:</label>
-                        <input type="password" id="newUserPassword" required minlength="6"
+                        <label class="block text-sm font-medium mb-2">🔒 Senha inicial:</label>
+                        <input type="password" id="newUserPassword" required minlength="6" value="000000"
                                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500"
-                               placeholder="Mínimo 6 caracteres">
+                               placeholder="Senha padrao">
+                        <p class="mt-1 text-xs text-gray-500">Padrao: 000000. O usuario troca no primeiro login.</p>
                     </div>
                     
                     <div>
@@ -2570,7 +2581,7 @@
                     <label class="block text-sm font-medium mb-2">🔒 Nova Senha (deixe vazio para manter):</label>
                     <input type="password" id="editUserPassword" minlength="6"
                            class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                           placeholder="Digite nova senha ou deixe vazio">
+                           placeholder="Use 000000 para senha temporaria">
                 </div>
                 
                 <div class="mb-4">
@@ -2675,6 +2686,38 @@
                 <div id="loginError" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden">
                     Usuario ou senha incorretos.
                 </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Forced Password Change Modal -->
+    <div id="forcePasswordChangeModal" class="modal" style="z-index: 1300;">
+        <div class="password-change-card bg-white rounded-lg p-8 w-full max-w-md mx-4">
+            <div class="mb-6 text-center">
+                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-login-logo">
+                <h2 class="web-login-title">Atualize sua senha</h2>
+                <p class="web-login-subtitle">Por seguranca, a senha padrao precisa ser trocada no primeiro acesso.</p>
+            </div>
+
+            <form onsubmit="submitForcedPasswordChange(event)">
+                <div class="web-login-field">
+                    <label class="web-login-label">Senha atual</label>
+                    <input type="password" id="forceCurrentPassword" required class="web-login-input" autocomplete="current-password" placeholder="Digite a senha atual">
+                </div>
+                <div class="web-login-field">
+                    <label class="web-login-label">Nova senha</label>
+                    <input type="password" id="forceNewPassword" required minlength="6" class="web-login-input" autocomplete="new-password" placeholder="Minimo 6 caracteres">
+                </div>
+                <div class="web-login-field">
+                    <label class="web-login-label">Confirmar nova senha</label>
+                    <input type="password" id="forceConfirmPassword" required minlength="6" class="web-login-input" autocomplete="new-password" placeholder="Repita a nova senha">
+                </div>
+
+                <button id="forcePasswordSubmitBtn" type="submit" class="web-login-button">Salvar nova senha</button>
+                <button type="button" onclick="logout(false)" class="mt-3 w-full rounded-lg border border-slate-200 bg-white px-4 py-3 font-bold text-slate-600 hover:bg-slate-50">
+                    Sair
+                </button>
+                <div id="forcePasswordMessage" class="mt-4 hidden rounded-lg p-3 text-sm"></div>
             </form>
         </div>
     </div>
@@ -2784,7 +2827,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260515-edit-summary-audit"></script>
+    <script src="static/app.js?v=20260516-password-modal"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();

@@ -37,6 +37,28 @@
                 <button id="apiConfigToggle" class="secondary-button" type="button">Config</button>
                 <p id="loginMessage" class="form-message" role="status"></p>
             </form>
+
+            <form id="passwordChangeForm" class="panel login-panel hidden">
+                <div class="brand-block compact-brand">
+                    <h2>Atualize sua senha</h2>
+                    <p class="muted-text">A senha padrao precisa ser trocada no primeiro acesso.</p>
+                </div>
+                <label>
+                    Senha atual
+                    <input id="changeCurrentPasswordInput" name="currentPassword" type="password" autocomplete="current-password" required>
+                </label>
+                <label>
+                    Nova senha
+                    <input id="changeNewPasswordInput" name="newPassword" type="password" autocomplete="new-password" minlength="6" required>
+                </label>
+                <label>
+                    Confirmar nova senha
+                    <input id="changeConfirmPasswordInput" name="confirmPassword" type="password" autocomplete="new-password" minlength="6" required>
+                </label>
+                <button id="changePasswordSubmitButton" class="primary-button" type="submit">Salvar nova senha</button>
+                <button id="changePasswordLogoutButton" class="secondary-button" type="button">Sair</button>
+                <p id="passwordChangeMessage" class="form-message" role="status"></p>
+            </form>
         </section>
 
         <section id="appView" class="app-view hidden">
@@ -262,6 +284,6 @@
         </div>
     </section>
 
-    <script src="static/mobile.js?v=20260515-mobile-permissoes"></script>
+    <script src="static/mobile.js?v=20260516-password-modal"></script>
 </body>
 </html>
