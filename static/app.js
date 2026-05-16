@@ -3271,9 +3271,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
@@ -4856,9 +4853,6 @@
                     const numericId = Number(professional.id);
                     if (!Number.isNaN(numericId) && numericId > 0) {
                         const headers = {};
-                        if (currentUser && currentUser.username && currentUser.password) {
-                            headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                        }
 
                         fetch(apiUrl(`/api/profissionais/${numericId}`), { method: 'DELETE', headers })
                         .then(res => {
@@ -6917,9 +6911,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
@@ -6961,9 +6952,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
@@ -7005,9 +6993,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
@@ -7127,11 +7112,7 @@
         }
 
         function getAuthenticatedHeaders(includeJson = true) {
-            const headers = includeJson ? { 'Content-Type': 'application/json' } : {};
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
-            return headers;
+            return includeJson ? { 'Content-Type': 'application/json' } : {};
         }
 
         function normalizeWaitlistStatus(status) {
@@ -8173,9 +8154,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
                 
                 // Determinar o usuário para ultima_acao
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
@@ -8253,9 +8231,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
@@ -8410,9 +8385,6 @@
             }
 
             const headers = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
 
             const recurrenceGroupId = createRecurrenceGroupId();
             const createdBy = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
@@ -8633,9 +8605,6 @@
             const recurrenceTotal = safeDates.length;
             const createdBy = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
             const headers = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
 
             const baseRecurrenceIndex = baseDateIndex + 1;
             const updatePayload = {
@@ -8946,9 +8915,6 @@
                     // Update on server
                     debugLog('[saveAppointment] Sending PUT to server for id=' + numericId);
                     const headers = { 'Content-Type': 'application/json' };
-                    if (currentUser && currentUser.username && currentUser.password) {
-                        headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                    }
 
                     const editPayload = {
                         profissional: appointment.professionalId,
@@ -9067,9 +9033,6 @@
 
             // Creating new appointment: attempt to save to server first
             const createHeaders = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                createHeaders['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
             fetch(apiUrl('/api/agendamentos'), {
                 method: 'POST',
                 headers: createHeaders,
@@ -9207,9 +9170,6 @@
             const numericId = Number(appointmentId);
             if (!Number.isNaN(numericId) && numericId > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'DELETE',
@@ -11634,9 +11594,6 @@
 
         function getRemarkAuthHeaders() {
             const headers = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
             return headers;
         }
 
@@ -12627,9 +12584,6 @@
             const numericId = Number(appointment.id);
             if (Number.isNaN(numericId) || numericId <= 0) return true;
             const headers = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
             const response = await fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                 method: 'PUT',
                 headers,
@@ -12930,9 +12884,6 @@
 
             const now = new Date().toISOString();
             const headers = { 'Content-Type': 'application/json' };
-            if (currentUser && currentUser.username && currentUser.password) {
-                headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-            }
 
             let cancelledCount = 0;
             const previousStates = new Map();
@@ -13803,9 +13754,6 @@
 
             if (serverAppointmentIds.length > 0) {
                 const headers = { 'Content-Type': 'application/json' };
-                if (currentUser && currentUser.username && currentUser.password) {
-                    headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                }
 
                 try {
                     const response = await fetch(apiUrl('/api/agendamentos/bulk-delete'), {
@@ -13871,9 +13819,6 @@
 
                 if (serverAppointmentIds.length > 0) {
                     const headers = { 'Content-Type': 'application/json' };
-                    if (currentUser && currentUser.username && currentUser.password) {
-                        headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
-                    }
 
                     try {
                         const response = await fetch(apiUrl('/api/agendamentos/bulk-delete'), {
