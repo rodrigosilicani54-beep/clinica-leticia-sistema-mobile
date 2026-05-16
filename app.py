@@ -148,10 +148,15 @@ CORS(
     resources={r"/api/*": {"origins": [f"http://127.0.0.1:{APP_PORT}", f"http://localhost:{APP_PORT}", "null"]}}
 )
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'sistema-secret-key')
+session_cookie_secure_value = str(os.environ.get('SESSION_COOKIE_SECURE') or '').strip().lower()
+if session_cookie_secure_value:
+    session_cookie_secure = session_cookie_secure_value in ('1', 'true', 'yes', 'sim', 's', 'on')
+else:
+    session_cookie_secure = bool(os.environ.get('RENDER'))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=False
+    SESSION_COOKIE_SECURE=session_cookie_secure
 )
 
 def get_file_path(*parts):
@@ -6987,9 +6992,9 @@ def atualizar_agendamento(agendamento_id):
 
 @app.route('/api/agendamentos/bulk-status', methods=['PUT'])
 def bulk_update_agendamento_status():
-    admin_check = require_admin()
-    if admin_check:
-        return admin_check
+    authenticated_user, auth_error = get_authenticated_user()
+    if auth_error:
+        return auth_error
 
     data = request.json or {}
     appointment_ids = data.get('appointmentIds') or data.get('appointment_ids') or data.get('ids')
@@ -7005,10 +7010,6 @@ def bulk_update_agendamento_status():
         return jsonify({'success': False, 'error': 'Status é obrigatório'}), 400
 
     try:
-        authenticated_user, auth_error = get_authenticated_user()
-        if auth_error:
-            return auth_error
-
         appointment_ids = [int(apt_id) for apt_id in appointment_ids if str(apt_id).strip()]
         if not appointment_ids:
             return jsonify({'success': False, 'error': 'Nenhum ID de agendamento válido fornecido'}), 400
@@ -7017,21 +7018,42 @@ def bulk_update_agendamento_status():
         cur = conn.cursor()
         
         # Verificar se as colunas existem
-        appointment_cols = get_table_columns_cached(cur, 'agendamentos')
+        appointment_cols = ensure_agendamento_link_schema(cur, get_table_columns_cached(cur, 'agendamentos'))
         ensure_agendamento_lock_columns(cur, appointment_cols)
 
         id_placeholders = ', '.join(['%s'] * len(appointment_ids))
+        select_fields = ['id', 'status', 'cancelado_por_username']
+        field_names = ['id', 'status', 'cancelado_por_username']
+        if 'profissional' in appointment_cols:
+            select_fields.append('profissional')
+            field_names.append('profissional')
+        if 'profissional_id' in appointment_cols:
+            select_fields.append('profissional_id')
+            field_names.append('profissional_id')
         cur.execute(
-            f"SELECT id, status, cancelado_por_username FROM agendamentos WHERE id IN ({id_placeholders})",
+            f"SELECT {', '.join(select_fields)} FROM agendamentos WHERE id IN ({id_placeholders})",
             tuple(appointment_ids)
         )
         current_rows = cur.fetchall()
-        current_by_id = {row[0]: {'status': row[1], 'cancelado_por_username': row[2]} for row in current_rows}
+        current_by_id = {row[0]: dict(zip(field_names, row)) for row in current_rows}
         missing_ids = [apt_id for apt_id in appointment_ids if apt_id not in current_by_id]
         if missing_ids:
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': f'Agendamentos nao encontrados: {missing_ids}'}), 404
+
+        permission_denied = [
+            apt_id for apt_id in appointment_ids
+            if not user_can_update_appointment_status(cur, authenticated_user, status, current_by_id[apt_id])
+        ]
+        if permission_denied:
+            cur.close()
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Sem permissao para alterar o status de um ou mais agendamentos',
+                'denied_appointments': permission_denied
+            }), 403
 
         current_username = authenticated_user['username']
         locked_by_other = []
@@ -7042,6 +7064,7 @@ def bulk_update_agendamento_status():
                 and current_row['cancelado_por_username']
                 and current_row['cancelado_por_username'] != current_username
                 and status != current_row['status']
+                and status not in {'em_analise', 'online'}
             ):
                 locked_by_other.append({
                     'id': apt_id,
