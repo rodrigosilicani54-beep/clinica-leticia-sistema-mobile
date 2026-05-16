@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema Clinica de agendamentos</title>
+    <link rel="icon" href="logo.png?v=20260516-web-logo">
+    <link rel="apple-touch-icon" href="logo.png?v=20260516-web-logo">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -49,6 +51,37 @@
         }
         .appointment-card:hover {
             transform: scale(1.02);
+        }
+        .web-header-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .web-header-logo {
+            flex: 0 0 auto;
+            width: 74px;
+            max-width: 22vw;
+            height: auto;
+        }
+        .web-header-title {
+            color: #111827;
+            font-size: 18px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+        .web-header-subtitle {
+            margin-top: 3px;
+            color: #6b7280;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .web-login-logo {
+            width: min(190px, 55vw);
+            height: auto;
+            margin: 0 auto 18px;
         }
         .blocked-slot {
             background: repeating-linear-gradient(
@@ -656,6 +689,14 @@
     <div class="container mx-auto p-1 max-w-full">
         <!-- Header -->
         <div class="bg-white rounded-lg shadow-lg p-3 mb-3">
+            <div class="system-header-brand web-header-brand">
+                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-header-logo">
+                <div class="min-w-0">
+                    <div class="web-header-title">Clinica Leticia Segretti</div>
+                    <div class="web-header-subtitle">Sistema de agendamentos</div>
+                </div>
+            </div>
+
             <!-- Legenda de Cores -->
             <div class="flex flex-wrap gap-2 mb-3 text-xs">
                 <div class="flex items-center gap-2">
@@ -764,7 +805,7 @@
             <!-- Home View -->
             <div id="homeView" class="bg-white rounded-lg shadow-lg p-6">
                 <div class="min-h-[58vh] flex flex-col items-center justify-center text-center">
-                    <img src="logo.png" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-8">
+                    <img src="logo.png?v=20260516-web-logo" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-8">
                     <div class="home-clock" aria-live="polite">
                         <div id="homeClockDate" class="home-clock-date"></div>
                         <div id="homeClockTime" class="home-clock-time"></div>
@@ -2549,7 +2590,7 @@
     <div id="loginModal" class="modal active">
         <div class="bg-white rounded-lg p-8 w-full max-w-md mx-4">
             <div class="text-center mb-6">
-                <div class="text-4xl mb-3">🔐</div>
+                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-login-logo">
                 <h2 class="text-2xl font-bold text-gray-800 mb-2">Sistema Clinica de agendamentos</h2>
                 <p class="text-gray-600">Acesso Restrito</p>
             </div>
