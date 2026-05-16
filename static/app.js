@@ -2564,82 +2564,9 @@
 
         // Automated test helper for user management (call from browser console)
         function runUserManagementTests() {
-            console.warn('runUserManagementTests desativado nesta versão: usuários e senhas são validados somente no servidor.');
+            console.warn('runUserManagementTests desativado nesta versao: usuarios e senhas sao validados somente no servidor.');
             return [];
-            const results = [];
-            try {
-                // Ensure admin exists
-                if (!users.admin) {
-                    users.admin = defaultUsers.admin;
-                    saveUsers();
-                }
-
-                // Set current admin session for the test
-                currentUser = { username: 'admin', password: users.admin.password, level: 'admin', name: users.admin.name };
-                userPermissions = permissions[currentUser.level];
-
-                const testUsername = 'testuser_' + Date.now().toString().slice(-6);
-
-                // Create user
-                const newUser = {
-                    password: 'testpass',
-                    level: 'editor',
-                    name: 'User Test',
-                    notes: 'automated test',
-                    isDefault: false,
-                    createdBy: currentUser.username,
-                    createdAt: new Date().toISOString(),
-                    lastLogin: null,
-                    isActive: true
-                };
-
-                users[testUsername] = newUser;
-                saveUsers();
-                results.push({ step: 'create', success: !!users[testUsername] });
-
-                // Duplicate check (attempt to create same user should leave existing)
-                const duplicateBefore = !!users[testUsername];
-                // Simulate createNewUser duplicate handling
-                if (users[testUsername]) {
-                    results.push({ step: 'duplicateCreate', success: true });
-                } else {
-                    results.push({ step: 'duplicateCreate', success: false });
-                }
-
-                // Edit user
-                users[testUsername].name = 'User Test Edited';
-                users[testUsername].level = 'viewer';
-                users[testUsername].password = 'newpass';
-                users[testUsername].lastModifiedBy = currentUser.username;
-                users[testUsername].lastModifiedAt = new Date().toISOString();
-                saveUsers();
-                results.push({ step: 'edit', success: users[testUsername].name === 'User Test Edited' && users[testUsername].level === 'viewer' });
-
-                // Toggle status
-                users[testUsername].isActive = false; saveUsers();
-                results.push({ step: 'deactivate', success: users[testUsername].isActive === false });
-                users[testUsername].isActive = true; saveUsers();
-                results.push({ step: 'reactivate', success: users[testUsername].isActive === true });
-
-                // Delete user
-                delete users[testUsername]; saveUsers();
-                results.push({ step: 'delete', success: !users[testUsername] });
-
-                // Refresh UI
-                if (typeof loadUsersTable === 'function') loadUsersTable();
-                if (typeof updateUserStats === 'function') updateUserStats();
-
-                showSuccessMessage('🔬 Testes de usuário concluídos com sucesso!');
-            } catch (err) {
-                results.push({ step: 'error', error: err.message });
-                console.error(err);
-                showSuccessMessage('⚠️ Erro durante testes. Veja o console para detalhes.');
-            }
-
-            debugLog('runUserManagementTests results:', results);
-            return results;
         }
-
         function getLevelIcon(level) {
             const icons = {
                 admin: '👑',
