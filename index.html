@@ -83,6 +83,63 @@
             height: auto;
             margin: 0 auto 18px;
         }
+        .web-login-card {
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+        }
+        .web-login-title {
+            color: #111827;
+            font-size: 25px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+        .web-login-subtitle {
+            margin-top: 8px;
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .web-login-field {
+            margin-bottom: 16px;
+        }
+        .web-login-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #334155;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .web-login-input {
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 13px 14px;
+            color: #111827;
+        }
+        .web-login-input:focus {
+            border-color: #0f766e;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+        }
+        .web-login-button {
+            width: 100%;
+            border-radius: 8px;
+            background: #0f766e;
+            color: #ffffff;
+            padding: 13px 16px;
+            font-weight: 800;
+            transition: background-color 0.15s ease;
+        }
+        .web-login-button:hover {
+            background: #115e59;
+        }
+        .web-login-footnote {
+            margin-top: 16px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+        }
         .blocked-slot {
             background: repeating-linear-gradient(
                 45deg,
@@ -2588,43 +2645,35 @@
 
     <!-- Login Modal -->
     <div id="loginModal" class="modal active">
-        <div class="bg-white rounded-lg p-8 w-full max-w-md mx-4">
-            <div class="text-center mb-6">
+        <div class="web-login-card bg-white rounded-lg p-8 w-full max-w-md mx-4">
+            <div class="text-center mb-7">
                 <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-login-logo">
-                <h2 class="text-2xl font-bold text-gray-800 mb-2">Sistema Clinica de agendamentos</h2>
-                <p class="text-gray-600">Acesso Restrito</p>
+                <h2 class="web-login-title">Clinica Leticia Segretti</h2>
+                <p class="web-login-subtitle">Sistema de agendamentos</p>
             </div>
             
             <form onsubmit="performLogin(event)">
-                <div class="mb-4">
-                    <label class="block text-sm font-medium mb-2">👤 Usuário:</label>
+                <div class="web-login-field">
+                    <label class="web-login-label">Usuario</label>
                     <input type="text" id="loginUsername" required 
-                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                           placeholder="Digite seu usuário">
+                           class="web-login-input"
+                           placeholder="Digite seu usuario">
                 </div>
                 
-                <div class="mb-6">
-                    <label class="block text-sm font-medium mb-2">🔑 Senha:</label>
+                <div class="web-login-field">
+                    <label class="web-login-label">Senha</label>
                     <input type="password" id="loginPassword" required 
-                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                           class="web-login-input"
                            placeholder="Digite sua senha">
                 </div>
                 
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium mb-4">
-                    🚪 Entrar no Sistema
+                <button type="submit" class="web-login-button">
+                    Entrar no sistema
                 </button>
-                
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h4 class="font-bold text-gray-800 mb-2">📋 Níveis de Acesso:</h4>
-                    <div class="text-sm text-gray-600 space-y-1">
-                        <div><strong>👑 Administrador:</strong> Acesso total + exclusões</div>
-                        <div><strong>Supervisor / ATM:</strong> Altera status da agenda, sem editar agendamentos</div>
-                        <div><strong>Profissional:</strong> Propria agenda e alteracao de status</div>
-                    </div>
-                </div>
+                <p class="web-login-footnote">Acesso exclusivo para equipe autorizada.</p>
                 
                 <div id="loginError" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg hidden">
-                    ❌ Usuário ou senha incorretos!
+                    Usuario ou senha incorretos.
                 </div>
             </form>
         </div>
