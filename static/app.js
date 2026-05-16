@@ -546,6 +546,7 @@
 
         // Load users from localStorage or use defaults
         let users = JSON.parse(localStorage.getItem('systemUsers') || JSON.stringify(defaultUsers));
+        let userListExpanded = false;
 
         // Permission definitions
         const permissions = {
@@ -1992,8 +1993,8 @@
             setupUserPermissionControlEvents();
             populateUserProfessionalSelects();
             renderUserPermissionControls('newUserPermissions', document.getElementById('newUserLevel')?.value || 'viewer', null);
-            loadUsersTable();
             updateUserStats();
+            setUserListPanelExpanded(false);
             document.getElementById('userManagementModal').classList.add('active');
         }
 
@@ -2167,10 +2168,60 @@
                 });
         }
 
+        function getUserListSummaryData(filteredCount = null) {
+            const allUsers = Object.values(users || {});
+            const totalUsers = allUsers.length;
+            const activeCount = allUsers.filter(user => user.isActive !== false).length;
+            const linkedCount = allUsers.filter(user => user.professionalId || user.profissional_id).length;
+            return {
+                totalUsers,
+                activeCount,
+                linkedCount,
+                filteredCount
+            };
+        }
+
+        function updateUserListSummary(filteredCount = null) {
+            const summary = document.getElementById('userListSummary');
+            if (!summary) return;
+            const data = getUserListSummaryData(filteredCount);
+            const parts = [
+                `${data.totalUsers} usuario(s) cadastrados`,
+                `${data.activeCount} ativo(s)`,
+                `${data.linkedCount} com profissional vinculado`
+            ];
+            if (data.filteredCount !== null && userListExpanded) {
+                parts.push(`${data.filteredCount} no filtro atual`);
+            }
+            summary.textContent = parts.join(' - ');
+        }
+
+        function setUserListPanelExpanded(expanded) {
+            userListExpanded = !!expanded;
+            const panel = document.getElementById('userListPanel');
+            const button = document.getElementById('userListToggleButton');
+            if (panel) {
+                panel.classList.toggle('hidden', !userListExpanded);
+            }
+            if (button) {
+                button.textContent = userListExpanded ? 'Ocultar usuarios cadastrados' : 'Ver usuarios cadastrados';
+            }
+            updateUserListSummary();
+            if (userListExpanded) {
+                loadUsersTable();
+                setTimeout(() => document.getElementById('userSearchInput')?.focus(), 0);
+            }
+        }
+
+        function toggleUserListPanel() {
+            setUserListPanelExpanded(!userListExpanded);
+        }
+
         function loadUsersTable() {
             const container = document.getElementById('usersTableContainer');
-            const searchTerm = document.getElementById('userSearchInput').value.toLowerCase();
-            const levelFilter = document.getElementById('userLevelFilter').value;
+            if (!container) return;
+            const searchTerm = (document.getElementById('userSearchInput')?.value || '').toLowerCase();
+            const levelFilter = document.getElementById('userLevelFilter')?.value || '';
             
             // Filter users
             const filteredUsers = Object.entries(users).filter(([username, user]) => {
@@ -2181,6 +2232,7 @@
                 
                 return matchesSearch && matchesLevel;
             });
+            updateUserListSummary(filteredUsers.length);
             
             if (filteredUsers.length === 0) {
                 container.innerHTML = `
@@ -2283,12 +2335,14 @@
 
         function updateUserStats() {
             const container = document.getElementById('userStats');
+            if (!container) return;
             
             const totalUsers = Object.keys(users).length;
             const adminCount = Object.values(users).filter(u => u.level === 'admin').length;
             const editorCount = Object.values(users).filter(u => u.level === 'editor').length;
             const viewerCount = Object.values(users).filter(u => u.level === 'viewer').length;
             const activeCount = Object.values(users).filter(u => u.isActive !== false).length;
+            updateUserListSummary();
             
             container.innerHTML = `
                 <div class="bg-white p-3 rounded border">
