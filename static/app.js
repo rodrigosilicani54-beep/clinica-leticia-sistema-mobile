@@ -3276,7 +3276,7 @@
                 }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -4023,8 +4023,8 @@
             }
 
             const endpoint = isEditing
-                ? `http://127.0.0.1:5000/api/profissionais/${editingProfessionalId}`
-                : 'http://127.0.0.1:5000/api/profissionais';
+                ? apiUrl(`/api/profissionais/${editingProfessionalId}`)
+                : apiUrl('/api/profissionais');
             const method = isEditing ? 'PUT' : 'POST';
 
             const payload = {
@@ -4743,7 +4743,7 @@
                 // If this professional has a numeric server id, attempt to update server first
                 const numericId = Number(professional.id);
                 if (!Number.isNaN(numericId) && numericId > 0) {
-                    fetch(`http://127.0.0.1:5000/api/profissionais/${numericId}`, {
+                    fetch(apiUrl(`/api/profissionais/${numericId}`), {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ativo: newStatus })
@@ -4860,7 +4860,7 @@
                             headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
                         }
 
-                        fetch(`http://127.0.0.1:5000/api/profissionais/${numericId}`, { method: 'DELETE', headers })
+                        fetch(apiUrl(`/api/profissionais/${numericId}`), { method: 'DELETE', headers })
                         .then(res => {
                             if (!res.ok) {
                                 // Propagate status via thrown object
@@ -6922,7 +6922,7 @@
                 }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -6966,7 +6966,7 @@
                 }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -7010,7 +7010,7 @@
                 }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -7241,7 +7241,7 @@
             if (waitlistOptionsFetchPromise) return waitlistOptionsFetchPromise;
             waitlistOptionsFetchPromise = (async () => {
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/api/lista-espera/opcoes', {
+                    const response = await fetch(apiUrl('/api/lista-espera/opcoes'), {
                         headers: getAuthenticatedHeaders(false)
                     });
                     const data = await response.json();
@@ -7334,7 +7334,7 @@
             if (waitlistFetchPromise) return waitlistFetchPromise;
             waitlistFetchPromise = (async () => {
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/api/lista-espera', {
+                    const response = await fetch(apiUrl('/api/lista-espera'), {
                         headers: getAuthenticatedHeaders(false),
                         cache: 'no-store'
                     });
@@ -7557,8 +7557,8 @@
             }
 
             const endpoint = itemId
-                ? `http://127.0.0.1:5000/api/lista-espera/${encodeURIComponent(itemId)}`
-                : 'http://127.0.0.1:5000/api/lista-espera';
+                ? apiUrl(`/api/lista-espera/${encodeURIComponent(itemId)}`)
+                : apiUrl('/api/lista-espera');
             const method = itemId ? 'PUT' : 'POST';
 
             try {
@@ -7597,7 +7597,7 @@
             saveWaitlistCache();
             renderWaitlist();
             try {
-                const response = await fetch(`http://127.0.0.1:5000/api/lista-espera/${encodeURIComponent(itemId)}`, {
+                const response = await fetch(apiUrl(`/api/lista-espera/${encodeURIComponent(itemId)}`), {
                     method: 'PUT',
                     headers: getAuthenticatedHeaders(true),
                     body: JSON.stringify({ status: item.status })
@@ -7714,7 +7714,7 @@
             }
             panel.classList.remove('hidden');
             panel.innerHTML = '<div class="text-sm text-gray-500">Carregando hist&oacute;rico...</div>';
-            fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}/auditoria?limit=3&order=desc`, {
+            fetch(apiUrl(`/api/agendamentos/${numericId}/auditoria?limit=3&order=desc`), {
                 headers: getAuthenticatedHeaders(false)
             })
             .then(res => res.json())
@@ -7742,7 +7742,7 @@
             }
             recent.classList.remove('hidden');
             recent.innerHTML = '<div class="text-gray-500">Carregando atividade recente...</div>';
-            fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}/auditoria?limit=3&order=desc`, {
+            fetch(apiUrl(`/api/agendamentos/${numericId}/auditoria?limit=3&order=desc`), {
                 headers: getAuthenticatedHeaders(false)
             })
             .then(res => res.json())
@@ -7925,7 +7925,7 @@
             }
 
             auditContent.innerHTML = '<div class="p-3 bg-gray-50 rounded border text-gray-600">Carregando auditoria...</div>';
-            fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}/auditoria`, {
+            fetch(apiUrl(`/api/agendamentos/${numericId}/auditoria`), {
                 headers: getAuthenticatedHeaders(false)
             })
             .then(res => res.json())
@@ -8180,7 +8180,7 @@
                 // Determinar o usuário para ultima_acao
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -8258,7 +8258,7 @@
                 }
 
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify({
@@ -8461,7 +8461,7 @@
             setAppointmentSavingState(false);
             showSuccessMessage(`${recurringPayloads.length} agendamento(s) ja aparecem na agenda. Salvando no banco em segundo plano...`);
 
-            fetch('http://127.0.0.1:5000/api/agendamentos/batch', {
+            fetch(apiUrl('/api/agendamentos/batch'), {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
@@ -8660,7 +8660,7 @@
             }
 
             try {
-                const updateResponse = await fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                const updateResponse = await fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'PUT',
                     headers,
                     body: JSON.stringify(updatePayload)
@@ -8692,7 +8692,7 @@
 
                 let createdAppointments = [];
                 if (recurringPayloads.length) {
-                    const batchResponse = await fetch('http://127.0.0.1:5000/api/agendamentos/batch', {
+                    const batchResponse = await fetch(apiUrl('/api/agendamentos/batch'), {
                         method: 'POST',
                         headers,
                         body: JSON.stringify({
@@ -8969,7 +8969,7 @@
                         editPayload.status = appointment.status;
                     }
 
-                    fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                    fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                         method: 'PUT',
                         headers,
                         body: JSON.stringify(editPayload)
@@ -9070,7 +9070,7 @@
             if (currentUser && currentUser.username && currentUser.password) {
                 createHeaders['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
             }
-            fetch('http://127.0.0.1:5000/api/agendamentos', {
+            fetch(apiUrl('/api/agendamentos'), {
                 method: 'POST',
                 headers: createHeaders,
                 body: JSON.stringify({
@@ -9211,7 +9211,7 @@
                     headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
                 }
 
-                fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+                fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                     method: 'DELETE',
                     headers,
                     body: JSON.stringify({
@@ -10002,7 +10002,7 @@
             showLoading('Exportando Agendamentos', 'Preparando arquivo Excel...');
             
             // Usar endpoint de download direto para desktop app
-            fetch('http://127.0.0.1:5000/api/export/download')
+            fetch(apiUrl('/api/export/download'))
                 .then(res => {
                     if (!res.ok) {
                         throw new Error(`Erro: ${res.status}`);
@@ -10028,7 +10028,7 @@
                     console.error('[EXPORT] Erro ao conectar:', err);
                     hideLoading();
                     // Fallback: tentar método original
-                    fetch('http://127.0.0.1:5000/api/export/agendamentos')
+                    fetch(apiUrl('/api/export/agendamentos'))
                         .then(res => res.json())
                         .then(data => {
                             if (data.success) {
@@ -10229,7 +10229,7 @@
         function downloadTemplate() {
             showLoading('Exportando Modelo', 'Preparando arquivo de modelo...');
             
-            fetch('http://127.0.0.1:5000/api/export/modelo')
+            fetch(apiUrl('/api/export/modelo'))
                 .then(res => {
                     debugLog('[MODELO] Status:', res.status);
                     return res.json();
@@ -10937,7 +10937,7 @@
                 try {
                     updateLoading((completedSteps / totalSteps) * 100, 'Enviando profissionais em lote...');
                     const payload = { professionals: toPost.map(p => ({ tempId: p.id, nome: p.name, especialidade: p.specialty, ativo: p.active })) };
-                    const res = await fetch('http://127.0.0.1:5000/api/profissionais/batch', {
+                    const res = await fetch(apiUrl('/api/profissionais/batch'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload),
@@ -10958,7 +10958,7 @@
                         for (const prof of toPost) {
                             if (importCancelled) break;
                             try {
-                                const res2 = await fetch('http://127.0.0.1:5000/api/profissionais', {
+                                const res2 = await fetch(apiUrl('/api/profissionais'), {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ nome: prof.name, especialidade: prof.specialty, ativo: prof.active }),
@@ -10988,7 +10988,7 @@
                     // Fallback sequential posting
                     for (const prof of toPost) {
                         try {
-                            const res2 = await fetch('http://127.0.0.1:5000/api/profissionais', {
+                            const res2 = await fetch(apiUrl('/api/profissionais'), {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ nome: prof.name, especialidade: prof.specialty, ativo: prof.active })
@@ -11037,7 +11037,7 @@
             if (apptPayloads.length > 0) {
                 try {
                     updateLoading((completedSteps / totalSteps) * 100, 'Enviando agendamentos em lote...');
-                    const res = await fetch('http://127.0.0.1:5000/api/agendamentos/batch', {
+                    const res = await fetch(apiUrl('/api/agendamentos/batch'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agendamentos: apptPayloads }),
@@ -11074,7 +11074,7 @@
                             };
 
                             try {
-                                const res2 = await fetch('http://127.0.0.1:5000/api/agendamentos', {
+                                const res2 = await fetch(apiUrl('/api/agendamentos'), {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(payload),
@@ -11125,7 +11125,7 @@
                         };
 
                         try {
-                            const res2 = await fetch('http://127.0.0.1:5000/api/agendamentos', {
+                            const res2 = await fetch(apiUrl('/api/agendamentos'), {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(payload)
@@ -11199,7 +11199,7 @@
                 showLoading('Enviando arquivo', 'Upload em progresso...');
                 updateLoading(5, 'Enviando arquivo...');
 
-                const res = await fetch('http://127.0.0.1:5000/api/import/upload', {
+                const res = await fetch(apiUrl('/api/import/upload'), {
                     method: 'POST',
                     body: form,
                     signal: importAbortController ? importAbortController.signal : undefined
@@ -11274,7 +11274,7 @@
 
             try {
                 const payload = { professionals: prosToSync, appointments: apptsToSync };
-                const res = await fetch('http://127.0.0.1:5000/api/sync', {
+                const res = await fetch(apiUrl('/api/sync'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
@@ -11335,7 +11335,7 @@
             try {
                 showLoading('Benchmark', 'Executando benchmark no servidor...');
                 updateLoading(10, 'Iniciando...');
-                const res = await fetch('http://127.0.0.1:5000/api/import/benchmark', {
+                const res = await fetch(apiUrl('/api/import/benchmark'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ n_professionals: n, appointments_per_professional: m }),
@@ -11732,7 +11732,7 @@
                 toggleBtn.textContent = 'Salvando...';
             }
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/remarques/config', {
+                const response = await fetch(apiUrl('/api/remarques/config'), {
                     method: 'PUT',
                     headers: getRemarkAuthHeaders(),
                     body: JSON.stringify({ enabled: nextEnabled })
@@ -11837,7 +11837,7 @@
             if (!appointmentId) return false;
             try {
                 const params = new URLSearchParams({ agendamento_id: String(appointmentId) });
-                const response = await fetch(`http://127.0.0.1:5000/api/remarques/check-pendente?${params.toString()}`, {
+                const response = await fetch(apiUrl(`/api/remarques/check-pendente?${params.toString()}`), {
                     headers: getRemarkAuthHeaders()
                 });
                 const data = await response.json();
@@ -12443,7 +12443,7 @@
             };
 
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/remarques', {
+                const response = await fetch(apiUrl('/api/remarques'), {
                     method: 'POST',
                     headers: getRemarkAuthHeaders(),
                     body: JSON.stringify(requestPayload)
@@ -12630,7 +12630,7 @@
             if (currentUser && currentUser.username && currentUser.password) {
                 headers['Authorization'] = `Bearer ${currentUser.username}:${currentUser.password}`;
             }
-            const response = await fetch(`http://127.0.0.1:5000/api/agendamentos/${numericId}`, {
+            const response = await fetch(apiUrl(`/api/agendamentos/${numericId}`), {
                 method: 'PUT',
                 headers,
                 body: JSON.stringify({
@@ -12662,7 +12662,7 @@
             renderRemarkRequestsList();
 
             try {
-                const response = await fetch(`http://127.0.0.1:5000/api/remarques/${request.id}/approve`, {
+                const response = await fetch(apiUrl(`/api/remarques/${request.id}/approve`), {
                     method: 'PUT',
                     headers: getRemarkAuthHeaders()
                 });
@@ -12782,7 +12782,7 @@
             remarkDecisionInFlight.add(requestKey);
             renderRemarkRequestsList();
             try {
-                const response = await fetch(`http://127.0.0.1:5000/api/remarques/${request.id}/reject`, {
+                const response = await fetch(apiUrl(`/api/remarques/${request.id}/reject`), {
                     method: 'PUT',
                     headers: getRemarkAuthHeaders(),
                     body: JSON.stringify({ reason: rejectionReason.trim() })
@@ -12969,7 +12969,7 @@
                 const usuarioAcao = currentUser ? (currentUser.name || currentUser.username) : 'Sistema';
                 
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/api/agendamentos/bulk-status', {
+                    const response = await fetch(apiUrl('/api/agendamentos/bulk-status'), {
                         method: 'PUT',
                         headers,
                         body: JSON.stringify({
@@ -13808,7 +13808,7 @@
                 }
 
                 try {
-                    const response = await fetch('http://127.0.0.1:5000/api/agendamentos/bulk-delete', {
+                    const response = await fetch(apiUrl('/api/agendamentos/bulk-delete'), {
                         method: 'DELETE',
                         headers,
                         body: JSON.stringify({
@@ -13876,7 +13876,7 @@
                     }
 
                     try {
-                        const response = await fetch('http://127.0.0.1:5000/api/agendamentos/bulk-delete', {
+                        const response = await fetch(apiUrl('/api/agendamentos/bulk-delete'), {
                             method: 'DELETE',
                             headers,
                             body: JSON.stringify({
@@ -15013,7 +15013,7 @@ async function startSupabaseSyncWithAllData() {
         addSyncLog('☁️ Enviando para Supabase...');
         updateSyncProgress(70, 'Enviando dados');
 
-        const response = await fetch('http://127.0.0.1:5000/api/sync/supabase', {
+        const response = await fetch(apiUrl('/api/sync/supabase'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
