@@ -5519,6 +5519,7 @@
             slot.style.justifyContent = 'center';
             slot.style.overflow = 'visible';
             slot.style.borderBottom = '1px solid #e5e7eb';
+            slot.style.boxSizing = 'border-box';
             
             const dateStr = formatDate(date);
             const slotStartMinutes = timeToMinutes(time);
@@ -5573,11 +5574,11 @@
                     block.style.position = 'absolute';
                     block.style.top = '0';
                     if (stackCount > 1) {
-                        block.style.left = `calc(${(index / stackCount) * 100}% + 2px)`;
-                        block.style.right = `calc(${((stackCount - index - 1) / stackCount) * 100}% + 2px)`;
+                        block.style.left = `${(index / stackCount) * 100}%`;
+                        block.style.right = `${((stackCount - index - 1) / stackCount) * 100}%`;
                     } else {
-                        block.style.left = '4px';
-                        block.style.right = '10px';
+                        block.style.left = '0';
+                        block.style.right = '0';
                     }
                     block.style.height = `${rowSpan * SLOT_HEIGHT}px`;
                     block.style.padding = '0';

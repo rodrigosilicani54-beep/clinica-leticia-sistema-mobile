@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         .appointment-slot {
+            box-sizing: border-box;
             min-height: 24px;
             transition: background-color 0.15s ease;
             cursor: pointer;
@@ -520,6 +521,7 @@
             border-radius: 8px;
         }
         .time-slot {
+            box-sizing: border-box;
             background: white;
             padding: 0;
             text-align: center;
@@ -540,6 +542,7 @@
             height: 100%;
         }
         .day-header {
+            box-sizing: border-box;
             background: #f8fafc;
             border-right: 1px solid #e5e7eb;
             border-bottom: 1px solid #d1d5db;
@@ -564,6 +567,7 @@
             background: #d7f0ee;
         }
         .time-label {
+            box-sizing: border-box;
             background: #ffffff;
             border-right: 1px solid #e5e7eb;
             border-bottom: 1px solid #e5e7eb;
@@ -578,6 +582,7 @@
             z-index: 5;
         }
         .schedule-appointment-block {
+            box-sizing: border-box;
             position: absolute;
             display: grid;
             grid-template-columns: 24px minmax(0, 1fr);
@@ -2845,7 +2850,7 @@
 
     
     <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97793d86d71df1e5',t:'MTc1NjYwODgzNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script src="static/app.js?v=20260516-password-modal"></script>
+    <script src="static/app.js?v=20260517-schedule-align"></script>
     <script>
         async function testarPython() {
             const resp = await window.pywebview.api.ping();
