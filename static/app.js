@@ -5571,7 +5571,7 @@
                     
                     // ✅ Grid-based positioning com linha inicial precisa
                     block.style.position = 'absolute';
-                    block.style.top = '1px';
+                    block.style.top = '0';
                     if (stackCount > 1) {
                         block.style.left = `calc(${(index / stackCount) * 100}% + 2px)`;
                         block.style.right = `calc(${((stackCount - index - 1) / stackCount) * 100}% + 2px)`;
@@ -5579,7 +5579,7 @@
                         block.style.left = '4px';
                         block.style.right = '10px';
                     }
-                    block.style.height = `${(rowSpan * SLOT_HEIGHT) - 2}px`;
+                    block.style.height = `${rowSpan * SLOT_HEIGHT}px`;
                     block.style.padding = '0';
                     block.style.margin = '0';
                     block.style.fontSize = '12px';
