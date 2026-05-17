@@ -3,7 +3,7 @@
 Este projeto cria um APK Android simples em WebView para:
 
 ```text
-https://clinica-leticia-sistema-mobile.onrender.com/mobile
+https://clinica-demo-7zv9.onrender.com/mobile
 ```
 
 ## Gerar pelo GitHub Actions
@@ -11,7 +11,7 @@ https://clinica-leticia-sistema-mobile.onrender.com/mobile
 1. Envie as alteracoes para o GitHub.
 2. Abra a aba **Actions** do repositorio.
 3. Rode o workflow **Build Android APK**.
-4. Baixe o artefato `clinica-leticia-mobile-debug-apk`.
+4. Baixe o artefato `agendaviva-pro-mobile-debug-apk`.
 
 O arquivo gerado fica dentro do artefato como `app-debug.apk`.
 

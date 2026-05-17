@@ -288,7 +288,7 @@ FROM (
         ('SALA DE BRINQUEDOS', '#8aa100'),
         ('SALA DE DISCUSSÃO', '#ffffff'),
         ('Sala de Reunião', '#5b5b5b'),
-        ('Sala Letícia', '#ffffff'),
+        ('Sala Demo 1', '#ffffff'),
         ('Sala do 3ºandar', '#ffffff'),
         ('SALA ONLINE 6º andar', '#ffffff'),
         ('Sala Online Neuro', '#ffffff'),

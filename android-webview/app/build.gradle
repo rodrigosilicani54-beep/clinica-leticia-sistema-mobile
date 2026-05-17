@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace "com.clinicaleticia.mobile"
+    namespace "com.agendaviva.mobile"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.clinicaleticia.mobile"
+        applicationId "com.agendaviva.mobile"
         minSdk 23
         targetSdk 35
         versionCode 1

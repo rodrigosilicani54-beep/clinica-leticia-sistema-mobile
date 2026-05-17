@@ -1,4 +1,4 @@
-package com.clinicaleticia.mobile;
+package com.agendaviva.mobile;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
@@ -20,8 +20,8 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL = "https://clinica-leticia-sistema-mobile.onrender.com/mobile";
-    private static final String APP_HOST = "clinica-leticia-sistema-mobile.onrender.com";
+    private static final String APP_URL = "https://clinica-demo-7zv9.onrender.com/mobile";
+    private static final String APP_HOST = "clinica-demo-7zv9.onrender.com";
 
     private WebView webView;
     private ProgressBar progressBar;

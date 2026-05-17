@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ClinicaLeticiaMobile"
+rootProject.name = "AgendaVivaMobile"
 include ":app"

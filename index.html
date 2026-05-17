@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema Clinica de agendamentos</title>
-    <link rel="icon" href="logo.png?v=20260516-web-logo">
-    <link rel="apple-touch-icon" href="logo.png?v=20260516-web-logo">
+    <title>AgendaViva Pro | Demo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -65,7 +63,7 @@
             flex: 0 0 auto;
             width: 74px;
             max-width: 22vw;
-            height: auto;
+            height: 54px;
         }
         .web-header-title {
             color: #111827;
@@ -81,8 +79,42 @@
         }
         .web-login-logo {
             width: min(190px, 55vw);
-            height: auto;
+            height: 110px;
             margin: 0 auto 18px;
+        }
+        .brand-placeholder {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            border: 1px dashed #94a3b8;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+            color: #334155;
+            font-weight: 900;
+            text-align: center;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+        .brand-placeholder small {
+            display: block;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: none;
+        }
+        .home-brand-placeholder {
+            width: min(230px, 62vw);
+            height: 132px;
+            margin-bottom: 28px;
+            font-size: 20px;
+        }
+        .web-header-logo {
+            font-size: 12px;
+        }
+        .web-login-logo {
+            font-size: 18px;
         }
         .web-login-card {
             border: 1px solid #e5e7eb;
@@ -762,10 +794,13 @@
         <!-- Header -->
         <div class="bg-white rounded-lg shadow-lg p-3 mb-3">
             <div class="system-header-brand web-header-brand">
-                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-header-logo">
+                <div class="brand-placeholder web-header-logo" aria-label="Espaco reservado para o logo">
+                    <span>LOGO</span>
+                    <small>Sua marca</small>
+                </div>
                 <div class="min-w-0">
-                    <div class="web-header-title">Clinica Leticia Segretti</div>
-                    <div class="web-header-subtitle">Sistema de agendamentos</div>
+                    <div class="web-header-title">AgendaViva Pro</div>
+                    <div class="web-header-subtitle">Agenda inteligente para equipes de saude</div>
                 </div>
             </div>
 
@@ -877,7 +912,10 @@
             <!-- Home View -->
             <div id="homeView" class="bg-white rounded-lg shadow-lg p-6">
                 <div class="min-h-[58vh] flex flex-col items-center justify-center text-center">
-                    <img src="logo.png?v=20260516-web-logo" alt="Logo da Clinica" class="w-44 md:w-56 h-auto mb-8">
+                    <div class="brand-placeholder home-brand-placeholder" aria-label="Espaco reservado para o logo">
+                        <span>LOGO</span>
+                        <small>Sua marca aqui</small>
+                    </div>
                     <div class="home-clock" aria-live="polite">
                         <div id="homeClockDate" class="home-clock-date"></div>
                         <div id="homeClockTime" class="home-clock-time"></div>
@@ -1505,7 +1543,7 @@
                         <li class="ml-4">🩷 Rosa = Análise</li>
                         <li class="ml-4">🔵 Azul = Discussão de Caso</li>
                         <li class="ml-4">🟢 Verde = CLS</li>
-                        <li class="ml-4">🟡 Amarelo Claro = Supervisão (ou texto com "Sup", "Clarissa", "Reinaldo", "Hellen", "Talita", "Thais", "Rosi", "Leticia", "Dimaima", "Natalia Lira", "Poliana")</li>
+                        <li class="ml-4">🟡 Amarelo Claro = Supervisão (ou texto com "Sup" e nomes cadastrados como supervisao)</li>
                         <li class="ml-4">🟣 Roxo = Treinamento (ou texto com "Trein", "Reun")</li>
                         <li class="ml-4">🟨 Amarelo Gema = Orientação Parental</li>
                         <li class="ml-4">⬜ Cinza = Almoço/Deslocamento/Bloqueado</li>
@@ -2681,9 +2719,12 @@
     <div id="loginModal" class="modal active">
         <div class="web-login-card bg-white rounded-lg p-8 w-full max-w-md mx-4">
             <div class="text-center mb-7">
-                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-login-logo">
-                <h2 class="web-login-title">Clinica Leticia Segretti</h2>
-                <p class="web-login-subtitle">Sistema de agendamentos</p>
+                <div class="brand-placeholder web-login-logo" aria-label="Espaco reservado para o logo">
+                    <span>LOGO</span>
+                    <small>Sua marca aqui</small>
+                </div>
+                <h2 class="web-login-title">AgendaViva Pro</h2>
+                <p class="web-login-subtitle">Plataforma de agendamento para operacoes de saude</p>
             </div>
             
             <form onsubmit="performLogin(event)">
@@ -2717,7 +2758,10 @@
     <div id="forcePasswordChangeModal" class="modal" style="z-index: 1300;">
         <div class="password-change-card bg-white rounded-lg p-8 w-full max-w-md mx-4">
             <div class="mb-6 text-center">
-                <img src="logo.png?v=20260516-web-logo" alt="Clinica Leticia Segretti" class="web-login-logo">
+                <div class="brand-placeholder web-login-logo" aria-label="Espaco reservado para o logo">
+                    <span>LOGO</span>
+                    <small>Sua marca aqui</small>
+                </div>
                 <h2 class="web-login-title">Atualize sua senha</h2>
                 <p class="web-login-subtitle">Por seguranca, a senha padrao precisa ser trocada no primeiro acesso.</p>
             </div>

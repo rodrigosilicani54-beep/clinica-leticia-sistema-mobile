@@ -11,13 +11,14 @@ from psycopg2.pool import ThreadedConnectionPool
 
 def _config_paths():
     paths = []
+    app_data_dir_name = "AgendaVivaPro"
     explicit_path = os.environ.get("CLINICA_DB_CONFIG") or os.environ.get("DB_CONFIG_FILE")
     if explicit_path:
         paths.append(Path(explicit_path))
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        paths.append(Path(local_app_data) / "ClinicaLeticiaSegretti" / "db_config.json")
+        paths.append(Path(local_app_data) / app_data_dir_name / "db_config.json")
 
     if getattr(sys, "frozen", False):
         paths.append(Path(sys.executable).resolve().parent / "db_config.local.json")

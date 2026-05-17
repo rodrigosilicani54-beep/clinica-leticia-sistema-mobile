@@ -42,7 +42,8 @@ print("APP.PY CORRETO FOI CARREGADO")
 from pathlib import Path
 
 #  Pasta base do usuário (funciona em qualquer PC)
-USER_BASE_DIR = Path.home() / "AppData" / "Local" / "ClinicaLeticiaSegretti"
+APP_DATA_DIR_NAME = "AgendaVivaPro"
+USER_BASE_DIR = Path.home() / "AppData" / "Local" / APP_DATA_DIR_NAME
 
 #  Subpastas
 BACKUP_DIR = USER_BASE_DIR / "backup"
@@ -86,7 +87,7 @@ def get_runtime_config_paths():
 
     local_app_data = os.environ.get('LOCALAPPDATA')
     if local_app_data:
-        paths.append(Path(local_app_data) / 'ClinicaLeticiaSegretti' / 'db_config.json')
+        paths.append(Path(local_app_data) / APP_DATA_DIR_NAME / 'db_config.json')
 
     if getattr(sys, 'frozen', False):
         paths.append(Path(sys.executable).resolve().parent / 'db_config.local.json')
@@ -9231,35 +9232,6 @@ def relatorio_agendamentos():
         for index, width in enumerate(col_widths, start=1):
             ws.column_dimensions[get_column_letter(index)].width = width
 
-        try:
-            logo_path = get_file_path('logo.png')
-            if os.path.exists(logo_path):
-                from importlib import import_module, util
-
-                if util.find_spec('PIL') is not None:
-                    from openpyxl.drawing.image import Image as XLImage
-
-                    pil_image = import_module('PIL.Image')
-                    logo = pil_image.open(logo_path).convert('RGBA')
-                    max_width = 520
-                    if logo.width > max_width:
-                        ratio = max_width / float(logo.width)
-                        logo = logo.resize((max_width, int(logo.height * ratio)))
-
-                    alpha = logo.getchannel('A')
-                    logo.putalpha(alpha.point(lambda value: int(value * 0.12)))
-
-                    watermark_buffer = io.BytesIO()
-                    logo.save(watermark_buffer, format='PNG')
-                    watermark_buffer.seek(0)
-
-                    watermark = XLImage(watermark_buffer)
-                    watermark.anchor = 'E6'
-                    ws.add_image(watermark)
-                    wb._hpt_watermark_buffer = watermark_buffer
-        except Exception as watermark_error:
-            print('Aviso: nao foi possivel aplicar marca d agua no relatorio:', watermark_error)
-
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
@@ -9732,14 +9704,11 @@ def sync_with_supabase():
 # =======================
 SPLASH_DURATION_SECONDS = 5.0
 MAIN_URL = f"http://127.0.0.1:{APP_PORT}/"
-MAIN_TITLE = "Clínica Leticia Segretti v1.1"
+MAIN_TITLE = "AgendaViva Pro Demo"
 MAIN_WINDOW_SIZE = (1200, 800)
 
 
 def criar_splash(js_api=None):
-    splash_path = get_file_path('splash.png')
-    splash_image_src = Path(splash_path).resolve().as_posix() if os.path.isfile(splash_path) else ''
-
     def _get_center_position(width, height):
         try:
             if sys.platform == 'win32':
@@ -9756,15 +9725,6 @@ def criar_splash(js_api=None):
     splash_height = 520
     x, y = _get_center_position(splash_width, splash_height)
 
-    splash_data_url = ''
-    if splash_image_src:
-        try:
-            with open(get_file_path('splash.png'), 'rb') as f:
-                encoded = base64.b64encode(f.read()).decode('ascii')
-                splash_data_url = f'data:image/jpeg;base64,{encoded}'
-        except Exception:
-            splash_data_url = f'file:///{splash_image_src}'
-
     splash_html = f"""
     <html>
     
@@ -9773,8 +9733,8 @@ def criar_splash(js_api=None):
         <style>
           body {{
             margin: 0;
-            background: #ffffff;
-            color: #ffffff;
+            background: #f8fafc;
+            color: #111827;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
             display: flex;
             align-items: center;
@@ -9793,37 +9753,61 @@ def criar_splash(js_api=None):
             text-align: center;
             max-width: 100%;
           }}
-          .logo {{
-            max-width: 35vw;
-            max-height: 35vh;
-            border-radius: 0px;
-            box-shadow: none;
+          .logo-placeholder {{
+            width: 240px;
+            height: 136px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border: 1px dashed #94a3b8;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #ffffff 0%, #eef2ff 100%);
+            color: #334155;
+            font-size: 1.45rem;
+            font-weight: 900;
+            letter-spacing: 0;
+            text-transform: uppercase;
+          }}
+          .logo-placeholder small {{
+            color: #64748b;
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: none;
           }}
           .title {{
             margin: 24px auto 0;
             font-size: 1.35rem;
-            letter-spacing: 0.12em;
+            letter-spacing: 0;
             text-transform: uppercase;
             opacity: 0.92;
+            font-weight: 900;
           }}
           .subtitle {{
             margin-top: 8px;
-            color: #c2c2c2;
+            color: #64748b;
             font-size: 0.95rem;
+            font-weight: 700;
           }}
         </style>
       </head>
       <body>
         <div class="container">
-          {f'<img class="logo" src="{splash_data_url}" alt="Splash">' if splash_data_url else '<div style="padding:24px;background:#141414;border-radius:18px;max-width:85vw;">Carregando Clínica Leticia Segretti...</div>'}
-
+          <div class="logo-placeholder">
+            <span>LOGO</span>
+            <small>Sua marca aqui</small>
+          </div>
+          <div class="title">AgendaViva Pro</div>
+          <div class="subtitle">Agenda inteligente para equipes de saude</div>
         </div>
       </body>
     </html>
     """
 
     window_args = {
-        'title': 'Clínica Leticia Segretti',
+        'title': 'AgendaViva Pro',
         'html': splash_html,
         'width': splash_width,
         'height': splash_height,
