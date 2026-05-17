@@ -1100,6 +1100,27 @@ def resolve_patient_reference(cur, value=None, paciente_id=None, require_active=
     return {'id': row[0], 'nome': row[1], 'ativo': row[2]}, None
 
 
+def get_or_create_patient_reference(cur, value=None, paciente_id=None):
+    patient, patient_error = resolve_patient_reference(cur, value, paciente_id)
+    if patient or normalize_optional_int(paciente_id) is not None:
+        return patient, patient_error, False
+
+    patient_name = str(value or '').strip()
+    if not patient_name:
+        return None, patient_error or 'Selecione um paciente cadastrado.', False
+
+    cur.execute(
+        """
+        INSERT INTO pacientes (nome, ativo, criado_em, atualizado_em)
+        VALUES (%s, TRUE, NOW(), NOW())
+        RETURNING id, nome, ativo
+        """,
+        (patient_name,)
+    )
+    row = cur.fetchone()
+    return {'id': row[0], 'nome': row[1], 'ativo': row[2]}, None, True
+
+
 def resolve_room_reference(cur, sala_id, require_active=True):
     room_id = normalize_room_id(sala_id)
     if room_id is None:
@@ -2525,6 +2546,248 @@ def create_performance_indexes(cur):
         cur.execute(statement)
 
 
+DATABASE_SCHEMA_READY = False
+DATABASE_SCHEMA_LOCK = threading.Lock()
+
+DATABASE_BASE_SCHEMA_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS profissionais (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(255) NOT NULL,
+        especialidade TEXT,
+        telefone VARCHAR(80),
+        data_nascimento DATE,
+        email VARCHAR(255),
+        numero_conselho VARCHAR(120),
+        preferencia TEXT,
+        contato_emergencia VARCHAR(255),
+        ativo BOOLEAN DEFAULT TRUE,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+    )
+    """,
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS especialidade TEXT",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS telefone VARCHAR(80)",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS data_nascimento DATE",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS numero_conselho VARCHAR(120)",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS preferencia TEXT",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS contato_emergencia VARCHAR(255)",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()",
+    "ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW()",
+    """
+    CREATE TABLE IF NOT EXISTS pacientes (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(255) NOT NULL,
+        data_nascimento DATE,
+        endereco TEXT,
+        telefone VARCHAR(80),
+        nome_mae VARCHAR(255),
+        nome_pai VARCHAR(255),
+        convenio VARCHAR(255),
+        ativo BOOLEAN DEFAULT TRUE,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+    )
+    """,
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS data_nascimento DATE",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS endereco TEXT",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS telefone VARCHAR(80)",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS nome_mae VARCHAR(255)",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS nome_pai VARCHAR(255)",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS convenio VARCHAR(255)",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()",
+    "ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW()",
+    """
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        level VARCHAR(50) DEFAULT 'viewer',
+        name VARCHAR(255),
+        notes TEXT,
+        profissional_id INTEGER,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW(),
+        is_active BOOLEAN DEFAULT TRUE,
+        ultimo_login_em TIMESTAMP,
+        ultimo_login_ip VARCHAR(80),
+        ultimo_login_user_agent TEXT,
+        must_change_password BOOLEAN DEFAULT FALSE
+    )
+    """,
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password VARCHAR(255)",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS level VARCHAR(50) DEFAULT 'viewer'",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS name VARCHAR(255)",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS notes TEXT",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS profissional_id INTEGER",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_em TIMESTAMP",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_ip VARCHAR(80)",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_login_user_agent TEXT",
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
+    """
+    CREATE TABLE IF NOT EXISTS agendamentos (
+        id SERIAL PRIMARY KEY,
+        profissional VARCHAR(255) NOT NULL,
+        profissional_id INTEGER,
+        paciente VARCHAR(255) NOT NULL,
+        paciente_id INTEGER,
+        tipo_atendimento VARCHAR(255),
+        data DATE NOT NULL,
+        hora_inicio VARCHAR(10) NOT NULL,
+        hora_fim VARCHAR(10),
+        quantidade_sessoes INTEGER,
+        sala_id INTEGER,
+        criado_por VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'agendado',
+        ultima_acao VARCHAR(255),
+        cancelado_por_username VARCHAR(255),
+        recorrencia_grupo_id VARCHAR(80),
+        recorrencia_indice INTEGER,
+        recorrencia_total INTEGER,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+    )
+    """,
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS profissional_id INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS paciente_id INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS tipo_atendimento VARCHAR(255)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS hora_fim VARCHAR(10)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS quantidade_sessoes INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS sala_id INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS criado_por VARCHAR(255)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'agendado'",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS ultima_acao VARCHAR(255)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS cancelado_por_username VARCHAR(255)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS recorrencia_grupo_id VARCHAR(80)",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS recorrencia_indice INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS recorrencia_total INTEGER",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()",
+    "ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW()",
+]
+
+
+def reset_schema_ready_flags():
+    global AGENDAMENTO_RECURRENCE_SCHEMA_READY
+    global SALAS_SCHEMA_READY
+    global AGENDAMENTO_SALA_NULLABLE_READY
+    global AGENDAMENTO_LINKS_SCHEMA_READY
+    global REMARQUE_SCHEMA_READY
+    global APP_CONFIG_SCHEMA_READY
+    global WAITLIST_SCHEMA_READY
+    global USER_PREFERENCES_SCHEMA_READY
+
+    AGENDAMENTO_RECURRENCE_SCHEMA_READY = False
+    SALAS_SCHEMA_READY = False
+    AGENDAMENTO_SALA_NULLABLE_READY = False
+    AGENDAMENTO_LINKS_SCHEMA_READY = False
+    REMARQUE_SCHEMA_READY = False
+    APP_CONFIG_SCHEMA_READY = False
+    WAITLIST_SCHEMA_READY = False
+    USER_PREFERENCES_SCHEMA_READY = False
+
+
+def ensure_default_admin_user(cur):
+    admin_username = 'admin'
+    admin_password = 'admin123'
+    cur.execute(
+        """
+        INSERT INTO usuarios (
+            username, password, level, name, notes, created_by, created_at,
+            is_active, must_change_password
+        )
+        SELECT %s, %s, 'admin', 'Administrador', 'Usuario admin padrao', 'initialize_database', NOW(),
+               TRUE, FALSE
+        WHERE NOT EXISTS (
+            SELECT 1 FROM usuarios WHERE lower(username) = lower(%s)
+        )
+        """,
+        (admin_username, hash_password(admin_password), admin_username)
+    )
+
+
+def initialize_database(force=False):
+    global DATABASE_SCHEMA_READY
+
+    if DATABASE_SCHEMA_READY and not force:
+        return {'success': True, 'skipped': True}
+
+    with DATABASE_SCHEMA_LOCK:
+        if DATABASE_SCHEMA_READY and not force:
+            return {'success': True, 'skipped': True}
+
+        conn = None
+        cur = None
+        try:
+            reset_schema_ready_flags()
+            clear_runtime_caches()
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            for statement in DATABASE_BASE_SCHEMA_STATEMENTS:
+                cur.execute(statement)
+
+            ensure_user_preferences_table(cur)
+            ensure_app_config_table(cur)
+            ensure_remarque_table_cached(cur, force=True)
+            ensure_lista_espera_table(cur, force=True)
+            ensure_agendamento_auditoria_table(cur)
+            ensure_audit_logs_table(cur)
+            ensure_usuarios_audit_columns(cur)
+
+            professional_cols = ensure_table_updated_timestamp(
+                cur,
+                'profissionais',
+                get_table_columns_cached(cur, 'profissionais', refresh=True)
+            )
+            ensure_professional_extra_columns(cur, professional_cols)
+            ensure_table_updated_timestamp(
+                cur,
+                'pacientes',
+                get_table_columns_cached(cur, 'pacientes', refresh=True)
+            )
+            appointment_cols = ensure_table_updated_timestamp(
+                cur,
+                'agendamentos',
+                get_table_columns_cached(cur, 'agendamentos', refresh=True)
+            )
+            appointment_cols = ensure_salas_schema(cur, appointment_cols)
+            appointment_cols = ensure_agendamento_link_schema(cur, appointment_cols)
+            ensure_agendamento_recurrence_columns(cur, appointment_cols)
+            ensure_agendamento_lock_columns(cur, appointment_cols)
+
+            normalize_existing_agendamento_statuses(cur)
+            ensure_default_admin_user(cur)
+            migrate_plain_user_passwords(cur)
+            create_performance_indexes(cur)
+
+            conn.commit()
+            clear_runtime_caches()
+            DATABASE_SCHEMA_READY = True
+            return {'success': True, 'skipped': False}
+        except Exception:
+            try:
+                if conn:
+                    conn.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                if cur:
+                    cur.close()
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+
 def ensure_performance_indexes_background():
     conn = None
     cur = None
@@ -2563,6 +2826,19 @@ def ensure_performance_indexes_background():
                 conn.close()
         except Exception:
             pass
+
+
+def prepare_database_background():
+    try:
+        result = initialize_database()
+        if result.get('skipped'):
+            print('Banco ja inicializado nesta sessao.')
+        else:
+            print('Banco inicializado com sucesso.')
+        ensure_performance_indexes_background()
+    except Exception as e:
+        print('Aviso: nao foi possivel inicializar o banco automaticamente:', e)
+        print('O servidor local continuara aberto. Verifique db_config.local.json e a conexao com o Supabase.')
 
 
 @app.route("/api/teste")
@@ -3597,13 +3873,11 @@ def do_batch_agendamentos(items):
                 item_errors.append('hora_inicio')
 
             professional, professional_error = resolve_professional_reference(cur, profissional_input, profissional_id_input)
-            patient, patient_error = resolve_patient_reference(cur, paciente_input, paciente_id_input)
+            patient, patient_error, _patient_created = get_or_create_patient_reference(cur, paciente_input, paciente_id_input)
             room = None
             room_error = None
             if sala_id is not None:
                 room, room_error = resolve_room_reference(cur, sala_id)
-            elif not appointment_status_allows_no_room(status):
-                room_error = 'Selecione uma sala cadastrada.'
             for error in (professional_error, patient_error, room_error):
                 if error:
                     item_errors.append(error)
@@ -4463,13 +4737,11 @@ def batch_agendamentos():
                 item_errors.append('hora_inicio is required')
 
             professional, professional_error = resolve_professional_reference(cur, profissional_input, profissional_id_input)
-            patient, patient_error = resolve_patient_reference(cur, paciente_input, paciente_id_input)
+            patient, patient_error, _patient_created = get_or_create_patient_reference(cur, paciente_input, paciente_id_input)
             room = None
             room_error = None
             if sala_id is not None:
                 room, room_error = resolve_room_reference(cur, sala_id)
-            elif not appointment_status_allows_no_room(status):
-                room_error = 'Selecione uma sala cadastrada.'
             for error in (professional_error, patient_error, room_error):
                 if error:
                     item_errors.append(error)
@@ -5467,9 +5739,6 @@ def criar_agendamento():
         return jsonify({'success': False, 'error': 'Selecione um profissional cadastrado.'}), 400
     if not paciente and not paciente_id:
         return jsonify({'success': False, 'error': 'Selecione um paciente cadastrado.'}), 400
-    room_required = not appointment_status_allows_no_room(status)
-    if room_required and sala_id is None:
-        return jsonify({'success': False, 'error': 'Selecione uma sala cadastrada.'}), 400
     if not data_field:
         return jsonify({'success': False, 'error': 'data is required'}), 400
     if not hora_inicio:
@@ -5499,7 +5768,7 @@ def criar_agendamento():
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': professional_error}), 400
-        patient_ref, patient_error = resolve_patient_reference(cur, paciente, paciente_id)
+        patient_ref, patient_error, _patient_created = get_or_create_patient_reference(cur, paciente, paciente_id)
         if patient_error:
             cur.close()
             conn.close()
@@ -6694,7 +6963,7 @@ def atualizar_agendamento(agendamento_id):
             profissional = str(professional_ref['id'])
             resolved_profissional_id = professional_ref['id']
         if paciente_provided:
-            patient_ref, patient_error = resolve_patient_reference(cur, paciente, paciente_id)
+            patient_ref, patient_error, _patient_created = get_or_create_patient_reference(cur, paciente, paciente_id)
             if patient_error:
                 cur.close()
                 conn.close()
@@ -6765,10 +7034,6 @@ def atualizar_agendamento(agendamento_id):
                 effective_hora_inicio = hora_inicio if hora_inicio is not None else target_row.get('hora_inicio')
                 effective_hora_fim = hora_fim if hora_fim is not None else (target_row.get('hora_fim') or effective_hora_inicio)
                 effective_status = novo_status if novo_status is not None else target_row.get('status')
-                if effective_sala_id is None and not appointment_status_allows_no_room(effective_status):
-                    cur.close()
-                    conn.close()
-                    return jsonify({'success': False, 'error': 'Selecione uma sala cadastrada.'}), 400
                 conflict = None
                 if effective_sala_id is not None:
                     conflict = find_patient_room_conflict(
@@ -8148,7 +8413,7 @@ def decidir_remarque(remarque_id, action):
 # INICIAR FLASK
 # =======================
 def start_flask():
-    threading.Thread(target=ensure_performance_indexes_background, daemon=True).start()
+    threading.Thread(target=prepare_database_background, daemon=True).start()
     print_server_access_urls()
     app.run(host=APP_HOST, port=APP_PORT)
 
@@ -9269,15 +9534,16 @@ def sync_with_supabase():
         
         sync_summary = {
             'professionals_synced': 0,
+            'patients_synced': 0,
             'appointments_synced': 0,
             'users_synced': 0,
             'timestamp': datetime.now().isoformat()
         }
         
-        print(f"[SYNC] 📊 Iniciando sincronização com Supabase...")
-        print(f"[SYNC] 👨‍⚕️ Profissionais: {len(professionals)}")
-        print(f"[SYNC] 📅 Agendamentos: {len(appointments)}")
-        print(f"[SYNC] 👥 Usuários: {len(users_data)}")
+        print("[SYNC] Iniciando sincronizacao com Supabase...")
+        print(f"[SYNC] Profissionais: {len(professionals)}")
+        print(f"[SYNC] Agendamentos: {len(appointments)}")
+        print(f"[SYNC] Usuarios: {len(users_data)}")
         
         # Sincronizar profissionais
         if professionals:
@@ -9307,7 +9573,7 @@ def sync_with_supabase():
                     cur.close()
                     conn.close()
                 except Exception as e:
-                    print(f"[SYNC] ⚠️ Erro ao sincronizar profissional {nome}: {str(e)}")
+                    print(f"[SYNC] Erro ao sincronizar profissional {nome}: {str(e)}")
                     try:
                         conn.rollback()
                         cur.close()
@@ -9335,8 +9601,11 @@ def sync_with_supabase():
                     hora_fim = apt.get('hora_fim') or apt.get('end_time', '')
 
                     professional_ref, professional_error = resolve_professional_reference(cur, profissional, profissional_id)
-                    patient_ref, patient_error = resolve_patient_reference(cur, paciente, paciente_id)
-                    room_ref, room_error = resolve_room_reference(cur, sala_id)
+                    patient_ref, patient_error, patient_created = get_or_create_patient_reference(cur, paciente, paciente_id)
+                    room_ref = None
+                    room_error = None
+                    if sala_id is not None:
+                        room_ref, room_error = resolve_room_reference(cur, sala_id)
                     if professional_error or patient_error or room_error:
                         raise ValueError(professional_error or patient_error or room_error)
 
@@ -9344,17 +9613,19 @@ def sync_with_supabase():
                     profissional_id = professional_ref['id']
                     paciente = patient_ref['nome']
                     paciente_id = patient_ref['id']
-                    sala_id = room_ref['id']
+                    sala_id = room_ref['id'] if room_ref else None
 
-                    conflict = find_patient_room_conflict(
-                        cur,
-                        paciente_id,
-                        sala_id,
-                        data_apt,
-                        hora_inicio,
-                        hora_fim or hora_inicio,
-                        appointment_cols=appointment_cols
-                    )
+                    conflict = None
+                    if sala_id is not None:
+                        conflict = find_patient_room_conflict(
+                            cur,
+                            paciente_id,
+                            sala_id,
+                            data_apt,
+                            hora_inicio,
+                            hora_fim or hora_inicio,
+                            appointment_cols=appointment_cols
+                        )
                     if conflict:
                         raise ValueError(build_patient_room_conflict_error(conflict))
                     
@@ -9381,12 +9652,14 @@ def sync_with_supabase():
                     
                     conn.commit()
                     invalidate_agendamentos_list_cache()
+                    if patient_created:
+                        sync_summary['patients_synced'] += 1
                     sync_summary['appointments_synced'] += 1
                     
                     cur.close()
                     conn.close()
                 except Exception as e:
-                    print(f"[SYNC] ⚠️ Erro ao sincronizar agendamento: {str(e)}")
+                    print(f"[SYNC] Erro ao sincronizar agendamento: {str(e)}")
                     try:
                         conn.rollback()
                         cur.close()
@@ -9404,7 +9677,7 @@ def sync_with_supabase():
                     user_name = user_info.get('name', '')
                     user_password = user_info.get('password', '')
                     if not user_password:
-                        print(f"[SYNC] Usuário {username_key} ignorado sem senha local para sincronização segura")
+                        print(f"[SYNC] Usuario {username_key} ignorado sem senha local para sincronizacao segura")
                         continue
                     if not is_password_hash(user_password):
                         user_password = hash_password(user_password)
@@ -9426,7 +9699,7 @@ def sync_with_supabase():
                     cur.close()
                     conn.close()
                 except Exception as e:
-                    print(f"[SYNC] ⚠️ Erro ao sincronizar usuário {username_key}: {str(e)}")
+                    print(f"[SYNC] Erro ao sincronizar usuario {username_key}: {str(e)}")
                     try:
                         conn.rollback()
                         cur.close()
@@ -9434,8 +9707,8 @@ def sync_with_supabase():
                     except:
                         pass
         
-        print(f"[SYNC] ✅ Sincronização concluída!")
-        print(f"[SYNC] 📊 Resumo: {sync_summary}")
+        print("[SYNC] Sincronizacao concluida.")
+        print(f"[SYNC] Resumo: {sync_summary}")
         
         return jsonify({
             'success': True,
@@ -9444,7 +9717,7 @@ def sync_with_supabase():
         })
     
     except Exception as e:
-        print(f"[SYNC] ❌ Erro na sincronização: {str(e)}")
+        print(f"[SYNC] Erro na sincronizacao: {str(e)}")
         import traceback
         traceback.print_exc()
         
